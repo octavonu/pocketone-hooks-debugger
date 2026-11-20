@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hooks Debugger · sign in</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐞</text></svg>" />
+  <link rel="stylesheet" href="/debug/assets/debugger.css" />
+</head>
+<body>
+  <div class="login">
+    <form method="post" action="/debug/login">
+      <h1>🐞 Hooks Debugger</h1>
+      <p>Sign in with the instance superuser account.</p>
+      <input type="email" name="email" placeholder="Email superuser" autocomplete="username" required value="<%= data.email || '' %>" />
+      <input type="password" name="password" placeholder="Password" autocomplete="current-password" required />
+      <button class="primary" type="submit">Sign in</button>
+      <p class="err" role="alert"><%= data.error || '' %></p>
+    </form>
+  </div>
+</body>
+</html>

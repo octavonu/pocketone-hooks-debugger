@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hooks Debugger</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐞</text></svg>" />
+  <link rel="stylesheet" href="/debug/assets/debugger.css" />
+</head>
+<body>
+  <div class="app" id="app-view">
+    <header class="top">
+      <h1>🐞 Hooks Debugger <span class="muted" style="font-weight: 400">v2 · replay</span></h1>
+      <span class="conn"><span class="dot" id="conn-dot"></span><span id="conn-text">connecting…</span></span>
+      <span class="spacer"></span>
+      <span class="muted"><%= data.user.email() %></span>
+      <form method="post" action="/debug/logout"><button>Sign out</button></form>
+    </header>
+
+    <div class="main">
+      <aside class="pane files-pane">
+        <div>
+          <div class="pane-bar">
+            <h2>Files</h2>
+            <button class="ib plain" id="btn-refresh" title="Reload the files from the server">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5v3h-3"/></svg>
+            </button>
+          </div>
+          <div class="tree">
+            <button class="folder" id="tree-root" aria-expanded="true">
+              <span class="tw">▾</span>
+              <svg class="ico dir" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3.6l1.5 1.5h5.9a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg>
+              pb_hooks
+            </button>
+            <ul class="files" id="files"></ul>
+          </div>
+        </div>
+        <div class="pane-bar rec-head">
+          <h2 title="Each run of a handler while this tab is open (see Record for). Pick one to replay it here.">Recordings</h2>
+          <button class="ib plain" id="btn-clear" title="Clear the recordings">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9"/></svg>
+          </button>
+        </div>
+        <div>
+          <ul class="recs" id="recs"></ul>
+        </div>
+      </aside>
+
+      <section class="pane code-pane">
+        <div class="tabs" id="tabs" hidden></div>
+        <div class="toolbar" id="toolbar" hidden>
+          <span class="name" id="file-name"></span>
+          <span class="hint" id="file-hint"></span>
+        </div>
+        <div class="code" id="code">
+          <p class="empty-state">Pick a file on the left.</p>
+        </div>
+      </section>
+
+      <aside class="pane panel">
+        <section class="dbg-head">
+          <div class="iconbar" role="toolbar" aria-label="Debugger">
+            <button class="ib plain" id="btn-restart" disabled title="Replay from the start (Shift+F8)" aria-label="Replay from the start">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a5 5 0 1 0 1.5-3.6"/><path d="M3 2.5v3h3"/></svg>
+            </button>
+            <button class="ib go" id="btn-continue" disabled title="Continue to the next breakpoint (F8)" aria-label="Continue">
+              <svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="3" width="2.4" height="10" rx=".6"/><path d="M6.5 3.2v9.6a.5.5 0 0 0 .77.42l7.1-4.8a.5.5 0 0 0 0-.84l-7.1-4.8a.5.5 0 0 0-.77.42z"/></svg>
+            </button>
+            <span class="sep"></span>
+            <button class="ib" id="btn-into" disabled title="Step Into (F5)" aria-label="Step Into">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v7.5M4.8 6.2 8 9.4l3.2-3.2"/><path d="M4 13.5h8" stroke-width="2.2"/></svg>
+            </button>
+            <button class="ib" id="btn-step" disabled title="Step Over (F6)" aria-label="Step Over">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 9.5a5.5 5.5 0 0 1 10.6-2"/><path d="M13.6 3.9v3.9H9.7"/><path d="M2 13.5h12" stroke-width="2.2"/></svg>
+            </button>
+            <button class="ib" id="btn-out" disabled title="Step Out (F7)" aria-label="Step Out">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 13.5h6" stroke-width="2.2"/><path d="M11.5 13.5V3M8.3 6.2l3.2-3.2 3.2 3.2"/></svg>
+            </button>
+            <button class="ib back" id="btn-back" disabled title="Step Back (Shift+F6): the previous line, in this function or a caller" aria-label="Step Back">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 9.5a5.5 5.5 0 0 0-10.6-2"/><path d="M2.4 3.9v3.9h3.9"/><path d="M2 13.5h12" stroke-width="2.2"/></svg>
+            </button>
+            <span class="sep"></span>
+            <button class="ib" id="btn-eval" disabled title="Evaluate expression" aria-label="Evaluate expression">
+              <svg viewBox="0 0 16 16" fill="currentColor"><text x="8" y="7" text-anchor="middle" font-size="6.6" font-weight="700" font-family="ui-monospace, Menlo, monospace">x+y</text><text x="8" y="14.6" text-anchor="middle" font-size="6.6" font-weight="700" font-family="ui-monospace, Menlo, monospace">=?</text></svg>
+            </button>
+            <span class="spacer"></span>
+            <div class="pause-for" id="pause-for" role="group" aria-label="Record for" title="Record for. Only me: only requests from this browser (dbg cookie), with the X-Dbg header, or from a superuser. Everyone: every handler run while this tab is open, also cron jobs and hooks without a request.">
+              <button data-v="me" aria-pressed="true">Only me</button>
+              <button data-v="all" aria-pressed="false">Everyone</button>
+            </div>
+            <button class="ib plain" id="btn-token" title="Copy the X-Dbg header (for curl or an app on another origin)" aria-label="Copy the X-Dbg header">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h.5"/></svg>
+            </button>
+          </div>
+          <div class="status">
+            <div class="state" id="state">No recording</div>
+            <div class="where" id="where">Pick a recording on the left, or send a request below.</div>
+            <ol class="stack" id="stack" aria-label="Call stack" hidden></ol>
+            <div class="result" id="result" hidden></div>
+          </div>
+        </section>
+
+        <div class="ptabs" role="tablist">
+          <button class="ptab active" data-tab="vars" role="tab">Variables</button>
+          <button class="ptab" data-tab="bps" role="tab">Breakpoints <span class="count" id="bp-count"></span></button>
+          <button class="ptab" data-tab="eval" role="tab">Evaluate</button>
+          <button class="ptab" data-tab="log" role="tab" title="What Go answered during the recorded run; highlighted: given so far">Recorded <span class="count" id="log-count"></span></button>
+        </div>
+        <div class="ptab-pane" id="pane-vars">
+          <div class="vt" id="vars"><p class="muted pad">Shown while a replay is paused.</p></div>
+        </div>
+        <div class="ptab-pane" id="pane-bps" hidden>
+          <ul class="bplist" id="bplist"></ul>
+        </div>
+        <div class="ptab-pane" id="pane-eval" hidden>
+          <div class="console">
+            <div class="out" id="console-out"></div>
+            <input id="console-input" placeholder="e.g. e.record.get('text')" disabled spellcheck="false" />
+          </div>
+          <p class="note">Runs in the browser, in the paused frame. Go values answer from the recording (or the snapshot taken then), so nothing reaches the server.</p>
+        </div>
+        <div class="ptab-pane" id="pane-log" hidden>
+          <ol class="log" id="log"></ol>
+        </div>
+
+        <section>
+          <h2>Send a request</h2>
+          <div class="runner">
+            <div class="row">
+              <select id="req-method">
+                <option>GET</option><option selected>POST</option><option>PATCH</option><option>DELETE</option>
+              </select>
+              <input id="req-path" value="/api/notes" spellcheck="false" />
+            </div>
+            <textarea id="req-body" spellcheck="false">{"text":"hello from the debugger"}</textarea>
+            <div class="row">
+              <label title="Checked: sends your superuser token (Authorization header), so API rules are skipped and e.auth is your superuser in hooks.&#10;Unchecked: sent as a guest with no auth, so API rules apply and e.auth is null, like a normal visitor.&#10;With Record for: Only me, both are recorded: as a guest through the dbg cookie, as superuser through the token."><input type="checkbox" id="req-auth" /> as superuser</label>
+              <span class="spacer"></span>
+              <button id="req-send">Send</button>
+            </div>
+            <div class="out" id="req-out"></div>
+          </div>
+        </section>
+      </aside>
+
+      <div class="splitter" id="split-left" role="separator" aria-orientation="vertical" title="Drag to resize · double-click to reset"></div>
+      <div class="splitter" id="split-right" role="separator" aria-orientation="vertical" title="Drag to resize · double-click to reset"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <div class="idle-banner" id="idle-banner" role="status" hidden>
+    <span>Debugger idle: nothing is recorded and the instance can hibernate. Click anywhere to reconnect.</span>
+    <button id="idle-wake">Reconnect</button>
+  </div>
+
+  <script>
+    window.DBG = <%- JSON.stringify({ email: data.user.email(), token: data.user.newAuthToken() }).replace(/</g, '\\u003c') %>
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/acorn@8.19.0/dist/acorn.js"></script>
+  <script src="/debug/assets/replay.js"></script>
+  <script src="/debug/assets/debugger.js"></script>
+</body>
+</html>

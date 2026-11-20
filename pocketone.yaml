@@ -1,0 +1,7 @@
+server:
+  http: 127.0.0.1:8094
+  pages_dir: ./pb_pages
+app:
+  dir: ./pb_data
+  hooks_dir: ./pb_hooks
+  migrations_dir: ./pb_migrations
