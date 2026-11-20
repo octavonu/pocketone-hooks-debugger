@@ -87,7 +87,8 @@ Remove both again to turn the debugger off completely.
 | `pb_pages/debug/api/files`, `recordings`, `presence` | JSON for the page: the hook files with their sources, the recordings, the heartbeat. |
 | `pb_pages/debug/_private/replay.js` | The replay engine: the fakes, the instrumentation (acorn), the tracer, and the inspector for variables and Evaluate. |
 | `pb_pages/debug/_private/debugger.js`, `debugger.css` | The UI. `index.ejs` writes these three files into the page, so only a signed-in superuser gets them (`_private/` is never served). |
-| `tests/engine.cjs` | Replays every recording of a running app in Node: `npm i acorn` somewhere, then `EMAIL=… PASSWORD=… ACORN=<path to acorn> node tests/engine.cjs`. |
+| `pb_pages/debug/_private/acorn.js`, `acorn.LICENSE` | [acorn](https://github.com/acornjs/acorn) 8.19.0, the JavaScript parser the replay and the syntax highlighting use: `dist/acorn.js` from the npm package, unchanged, and its MIT license. Included so there's nothing to install and the debugger works offline. |
+| `tests/engine.cjs` | Replays every recording of a running app in Node: `EMAIL=… PASSWORD=… node tests/engine.cjs`. Uses the same `acorn.js`, so there's nothing to install. |
 | `pb_hooks/main.pb.js`, `pb_hooks/lib/greet.js`, `pb_migrations/` | The demo app. |
 
 ## Tested with
@@ -96,7 +97,7 @@ Remove both again to turn the debugger off completely.
 |---|---|
 | PocketOne | **0.0.1-alpha.9** (PocketBase 0.42.3), the release binary for macOS (darwin/amd64) |
 | Browser | **Google Chrome 157** (157.0.8103.79). The replay runs in the browser's JS engine, here V8, not in PocketOne's QuickJS |
-| acorn | 8.19.0 (loaded from jsDelivr by the page) |
+| acorn | 8.19.0, included |
 | Node | 24.22.1, for `tests/engine.cjs` |
 
 Other browsers (Firefox, Safari) aren't tested yet. The page only uses standard JavaScript (`Proxy`, `eval`, `with`),

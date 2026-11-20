@@ -24,6 +24,10 @@ The successor of [pb-hooks-debugger](https://github.com/octavonu/pb-hooks-debugg
 
 - v1: **Enable debug** / **Disable debug** (rewriting hook files), pausing on the server with `sleep()`, `pb_public/debug/`, `dbg.pb.js`, `_dbg_runtime.js`, `_dbg_server.js`, the `dbg_breakpoints` and `dbg_sessions` collections and their migrations, the message board demo, and `.pockethostconfig`. v1 still works on plain PocketBase and PocketHost, in the archived pb-hooks-debugger repo.
 
+### Changed (later the same day)
+
+- acorn 8.19.0 is included (`pb_pages/debug/_private/acorn.js`, unchanged, with its MIT license in `acorn.LICENSE`) instead of loaded from jsDelivr. The page works offline, and `tests/engine.cjs` uses the same file: no `npm i acorn` or `ACORN=` anymore.
+
 ### Fixed
 
 - The debugger's code (`replay.js`, `debugger.js`, `debugger.css`) was served to anyone at `/debug/assets/`: PocketPages serves static files without running `+middleware.js`. They are now in `pb_pages/debug/_private/` (never served) and written into the page, so only a signed-in superuser gets them. The login page has its own small style.

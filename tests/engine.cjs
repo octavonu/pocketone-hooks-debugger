@@ -1,8 +1,8 @@
 // Replays every recording of the local test app with pb_pages/debug/_private/replay.js, in Node:
-//   EMAIL=<superuser> PASSWORD=<password> ACORN=<path to acorn> node tests/engine.cjs
+//   EMAIL=<superuser> PASSWORD=<password> node tests/engine.cjs
 // For each: the trace (every executed line), then the variables and an expression at one step.
 const fs = require("fs"), vm = require("vm")
-globalThis.acorn = require(process.env.ACORN || "acorn")
+globalThis.acorn = require("../pb_pages/debug/_private/acorn.js") // the same file the page uses
 vm.runInThisContext(fs.readFileSync(__dirname + "/../pb_pages/debug/_private/replay.js", "utf8"), { filename: "replay.js" })
 const U = process.env.URL || "http://127.0.0.1:8094"
 ;(async () => {
