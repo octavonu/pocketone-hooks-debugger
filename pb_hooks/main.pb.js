@@ -1,4 +1,4 @@
-/// <reference path="../pb_data/types.d.ts" />
+/// <reference path="../types.d.ts" />
 
 routerAdd("GET", "/api/hello/{name}", (e) => {
   const name = e.request.pathValue("name")

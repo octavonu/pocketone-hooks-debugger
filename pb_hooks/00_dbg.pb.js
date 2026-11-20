@@ -1,4 +1,4 @@
-/// <reference path="../pb_data/types.d.ts" />
+/// <reference path="../types.d.ts" />
 
 // Hooks Debugger v2: the recorder (PocketOne only). The debugger UI is in pb_pages/debug/.
 //

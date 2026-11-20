@@ -12,6 +12,7 @@ The successor of [pb-hooks-debugger](https://github.com/octavonu/pb-hooks-debugg
 - The browser replays a recording against those answers, instrumented in memory, and steps through its trace.
 - **Step Back** (Shift+F6), **Replay from the start** (Shift+F8), a **Recordings** list, a **Recorded** tab (what Go answered, up to the current step), and "Finished: same as on the server" with the response at the end.
 - A hook that runs inside another handler (e.g. `onRecordCreate` inside `$app.save()`) gets its own recording.
+- Quick start with the PocketOne release binary (unzip only `pocketone`, it's in `.gitignore`), and a **Tested with** table in the README: PocketOne 0.0.1-alpha.9 (PocketBase 0.42.3), Chrome 157, acorn 8.19.0, Node 24.22.1. The hook files reference `../types.d.ts`, where PocketOne alpha.9 writes the JS types (with a `tsconfig.json`; both are in `.gitignore`).
 
 ### Changed
 

@@ -1,6 +1,6 @@
 # PocketOne Hooks Debugger
 
-A breakpoint debugger for the JS hooks (`pb_hooks`) of a [PocketOne](https://github.com/pockethost/pocketone) app.
+A breakpoint debugger for the JS hooks (`pb_hooks`) of a [PocketOne](https://github.com/pocketonehq/pocketone) app.
 A file tree, tabs, breakpoints on line numbers, a call stack, Variables / Breakpoints / Evaluate and a request
 runner, like a debugger in an IDE. But **nothing is rewritten and nothing pauses on the server**: requests are
 recorded, and the browser replays them, so you can also step back.
@@ -39,17 +39,26 @@ recorded, and the browser replays them, so you can also step back.
 
 ## Quick start
 
-1. Get the `pocketone` binary ([PocketOne](https://github.com/pockethost/pocketone)).
-2. From this folder, create a superuser and start the server. `pocketone.yaml` sets the port (8094) and the
-   folders:
+1. Download PocketOne from its [releases](https://github.com/pocketonehq/pocketone/releases): the zip for your
+   system, e.g. `pocketone_0.0.1-alpha.9_darwin_arm64.zip` (Mac with Apple silicon), `…_darwin_amd64.zip` (Intel Mac),
+   `…_linux_amd64.zip` or `…_windows_amd64.zip`. Put it in this folder.
+2. Unzip **only the binary**. The zip also has a `CHANGELOG.md`, which would overwrite this project's:
 
    ```sh
-   pocketone superuser upsert you@example.com your-password
-   pocketone serve
+   unzip pocketone_0.0.1-alpha.9_darwin_amd64.zip pocketone      # pocketone.exe on Windows
    ```
 
-3. Open http://127.0.0.1:8094/debug/ and sign in with the superuser.
-4. Open `main.pb.js` and click line 17. In **Send a request**, press **Send**. The request is recorded, and the
+   The binary, the zip and its other files are in `.gitignore`. On macOS, if you downloaded the zip with a browser
+   and macOS refuses to open the binary, remove the download flag: `xattr -d com.apple.quarantine pocketone`.
+3. Create a superuser and start the server. `pocketone.yaml` sets the port (8094) and the folders:
+
+   ```sh
+   ./pocketone superuser upsert you@example.com your-password
+   ./pocketone serve
+   ```
+
+4. Open http://127.0.0.1:8094/debug/ and sign in with the superuser.
+5. Open `main.pb.js` and click line 17. In **Send a request**, press **Send**. The request is recorded, and the
    replay stops at the line. F8 Continue · F5 Into · F6 Over · F7 Out · Shift+F6 Back · Shift+F8 Replay.
 
 The demo app has `GET /api/hello/{name}` (with a helper in `lib/greet.js`), `POST /api/notes` (writes a record), and
@@ -80,6 +89,19 @@ Remove both again to turn the debugger off completely.
 | `pb_pages/debug/assets/debugger.js`, `debugger.css` | The UI. |
 | `tests/engine.cjs` | Replays every recording of a running app in Node: `npm i acorn` somewhere, then `EMAIL=… PASSWORD=… ACORN=<path to acorn> node tests/engine.cjs`. |
 | `pb_hooks/main.pb.js`, `pb_hooks/lib/greet.js`, `pb_migrations/` | The demo app. |
+
+## Tested with
+
+| | Version |
+|---|---|
+| PocketOne | **0.0.1-alpha.9** (PocketBase 0.42.3), the release binary for macOS (darwin/amd64) |
+| Browser | **Google Chrome 157** (157.0.8103.79). The replay runs in the browser's JS engine, here V8, not in PocketOne's QuickJS |
+| acorn | 8.19.0 (loaded from jsDelivr by the page) |
+| Node | 24.22.1, for `tests/engine.cjs` |
+
+Other browsers (Firefox, Safari) aren't tested yet. The page only uses standard JavaScript (`Proxy`, `eval`, `with`),
+so they should work. PocketOne is still in alpha: a newer release can change what hooks see, so the recorder and the
+replay may need updates.
 
 ## Limitations
 
