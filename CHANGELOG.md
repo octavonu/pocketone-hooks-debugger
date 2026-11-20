@@ -24,6 +24,10 @@ The successor of [pb-hooks-debugger](https://github.com/octavonu/pb-hooks-debugg
 
 - v1: **Enable debug** / **Disable debug** (rewriting hook files), pausing on the server with `sleep()`, `pb_public/debug/`, `dbg.pb.js`, `_dbg_runtime.js`, `_dbg_server.js`, the `dbg_breakpoints` and `dbg_sessions` collections and their migrations, the message board demo, and `.pockethostconfig`. v1 still works on plain PocketBase and PocketHost, in the archived pb-hooks-debugger repo.
 
+### Fixed
+
+- The debugger's code (`replay.js`, `debugger.js`, `debugger.css`) was served to anyone at `/debug/assets/`: PocketPages serves static files without running `+middleware.js`. They are now in `pb_pages/debug/_private/` (never served) and written into the page, so only a signed-in superuser gets them. The login page has its own small style.
+
 ### Upgrading
 
 From v1: remove `pb_hooks/dbg.pb.js`, `pb_hooks/_dbg_runtime.js`, `pb_hooks/_dbg_server.js` and `pb_public/debug/`, and delete the `dbg_breakpoints` and `dbg_sessions` collections. Then add `pb_hooks/00_dbg.pb.js` and `pb_pages/debug/` to a PocketOne app.

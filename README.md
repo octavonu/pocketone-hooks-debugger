@@ -85,8 +85,8 @@ Remove both again to turn the debugger off completely.
 | `pb_pages/debug/login/`, `logout/` | Sign in and out. |
 | `pb_pages/debug/index.ejs` | The page. |
 | `pb_pages/debug/api/files`, `recordings`, `presence` | JSON for the page: the hook files with their sources, the recordings, the heartbeat. |
-| `pb_pages/debug/assets/replay.js` | The replay engine: the fakes, the instrumentation (acorn), the tracer, and the inspector for variables and Evaluate. |
-| `pb_pages/debug/assets/debugger.js`, `debugger.css` | The UI. |
+| `pb_pages/debug/_private/replay.js` | The replay engine: the fakes, the instrumentation (acorn), the tracer, and the inspector for variables and Evaluate. |
+| `pb_pages/debug/_private/debugger.js`, `debugger.css` | The UI. `index.ejs` writes these three files into the page, so only a signed-in superuser gets them (`_private/` is never served). |
 | `tests/engine.cjs` | Replays every recording of a running app in Node: `npm i acorn` somewhere, then `EMAIL=… PASSWORD=… ACORN=<path to acorn> node tests/engine.cjs`. |
 | `pb_hooks/main.pb.js`, `pb_hooks/lib/greet.js`, `pb_migrations/` | The demo app. |
 

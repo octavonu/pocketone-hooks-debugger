@@ -5,7 +5,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hooks Debugger · sign in</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐞</text></svg>" />
-  <link rel="stylesheet" href="/debug/assets/debugger.css" />
+  <style>
+    /* Own small style: the debugger's CSS is only for signed-in superusers. Colors as in _private/debugger.css. */
+    :root { --bg: #f5f6f8; --surface: #fff; --text: #1b1f24; --muted: #66707c; --border: #dde1e6; --accent: #2f6fde; --bp: #e03131; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111317; --surface: #181b20; --text: #e6e9ee; --muted: #8b95a2; --border: #2c313a; --accent: #6ea2ff; --bp: #ff6b6b; }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    button, input { font: inherit; color: inherit; border: 1px solid var(--border); border-radius: 7px; }
+    input { background: var(--bg); padding: 6px 9px; min-width: 0; }
+    input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    button { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 5px 11px; cursor: pointer; }
+    .login { display: grid; place-items: center; min-height: 100%; padding: 16px; }
+    .login form {
+      width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 24px; display: grid; gap: 12px;
+    }
+    .login h1 { margin: 0; font-size: 1.3rem; }
+    .login p { margin: 0; color: var(--muted); }
+    .login .err { color: var(--bp); min-height: 1.2em; font-size: .9rem; }
+  </style>
 </head>
 <body>
   <div class="login">

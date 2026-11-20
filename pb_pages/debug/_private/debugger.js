@@ -1,6 +1,6 @@
 // Hooks Debugger v2: the page. The file tree, tabs, code view, variables tree, call stack, request runner, splitters
 // and idle mode come from v1. What's new: nothing runs or pauses on the server. You pick a recording (made by
-// pb_hooks/00_dbg.pb.js while this tab is open) and the browser replays it (assets/replay.js): stepping moves through
+// pb_hooks/00_dbg.pb.js while this tab is open) and the browser replays it (_private/replay.js): stepping moves through
 // the replay's trace, so you can also step back, and the variables and Evaluate come from replaying up to that step.
 "use strict"
 

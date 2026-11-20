@@ -5,7 +5,7 @@ module.exports = (ctx, next) => {
   ctx.res.layout(false) // the app's own +layout.ejs doesn't wrap the debugger
   ctx.res.header("Cache-Control", "no-store")
   const path = ctx.req.url.pathname
-  if (path.startsWith("/debug/login") || path.startsWith("/debug/assets/")) return next()
+  if (path.startsWith("/debug/login")) return next()
 
   let user = ctx.auth
   const token = ctx.req.cookie("dbg_auth")

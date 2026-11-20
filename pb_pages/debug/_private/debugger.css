@@ -61,16 +61,6 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 kbd { font-family: var(--mono); font-size: .75em; color: var(--muted); }
 
-/* Login */
-.login { display: grid; place-items: center; min-height: 100%; padding: 16px; }
-.login form {
-  width: 100%; max-width: 360px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 12px; padding: 24px; display: grid; gap: 12px;
-}
-.login h1 { margin: 0; font-size: 1.3rem; }
-.login p { margin: 0; color: var(--muted); }
-.err { color: var(--bp); min-height: 1.2em; margin: 0; font-size: .9rem; }
-
 /* App layout */
 .app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
 header.top {
