@@ -122,10 +122,46 @@ replay may need updates.
 
 ## Security
 
-The debugger is for superusers only. Recordings can contain request data (headers, bodies, records), so they are
-kept only in memory, only while a debugger tab is open, and only shown to superusers. Secret headers are masked in
-the views but stay in the recording, because the replay needs the same values. Don't leave `00_dbg.pb.js` and
-`pb_pages/debug/` on a production app you aren't debugging.
+A debugger has to see everything your hooks do, so here is what this one does, and how you can check it.
+
+**Only superusers.** Everything under `/debug/` except the sign-in page needs a superuser (`+middleware.js`). The
+debugger's code is in `pb_pages/debug/_private/`, which PocketPages never serves, and `index.ejs` writes it into
+the page: someone who isn't signed in gets only the sign-in form. You can check:
+`curl -i http://127.0.0.1:8094/debug/_private/replay.js` returns 404.
+
+**The recorder** (`pb_hooks/00_dbg.pb.js`) wraps your handlers and the Go objects they use (`e`, `$app`, the other
+`$` globals) and writes down every answer they give, including request headers, cookies, bodies and records. It:
+
+- records only while a superuser's debugger tab is open (it sends a heartbeat; recording stops 90 s after the last
+  one). With **Only me**, only that tab's requests and superusers' requests are recorded.
+- keeps the last 50 recordings in memory only: nothing is written to disk or to the database, and a restart clears
+  them.
+- never sends anything anywhere: it doesn't use `$http`, `$os` or files. The recordings are in
+  `globalThis.__dbg`, and the debugger's pages show them only to a signed-in superuser. (Your own hook and page code
+  runs in the same JS VM, so it could read them too, like anything else there.)
+- masks the `Authorization`, `Cookie` and `Set-Cookie` headers in the views. They stay in the recording, because the
+  replay needs the same values.
+
+**`eval` and `with`.** Security scanners flag them, so here is why they are there. The replay (`replay.js`) runs
+**your own hook files, in your own browser**: it reads them from your server, adds the step probes in memory and
+runs them with an indirect `eval`, inside `with` (that's how the hooks see the fake `$app`, `e` and the other
+globals). Evaluate runs what you type, in the paused frame. Nothing in the replay sends requests: Go values answer
+from the recording. `tests/engine.cjs` does the same in Node with `vm.runInThisContext`; it only connects to the URL
+you give it (default `http://127.0.0.1:8094`) and reads the credentials from environment variables.
+
+**acorn.** `pb_pages/debug/_private/acorn.js` is a copy of [acorn](https://github.com/acornjs/acorn) 8.19.0
+(`dist/acorn.js` from the npm package, MIT, unchanged; its license is in `acorn.LICENSE`). Check that it's the
+original:
+
+```sh
+curl -s https://cdn.jsdelivr.net/npm/acorn@8.19.0/dist/acorn.js | shasum -a 256
+shasum -a 256 pb_pages/debug/_private/acorn.js
+# both: b95392d79457d0357555c5ed3e56302d074b92dff119bcf3b44179500b10e9df
+```
+
+The page loads nothing from other sites.
+
+Don't leave `00_dbg.pb.js` and `pb_pages/debug/` on a production app you aren't debugging.
 
 ## Earlier version (plain PocketBase)
 

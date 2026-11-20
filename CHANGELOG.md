@@ -28,6 +28,8 @@ The successor of [pb-hooks-debugger](https://github.com/octavonu/pb-hooks-debugg
 
 - acorn 8.19.0 is included (`pb_pages/debug/_private/acorn.js`, unchanged, with its MIT license in `acorn.LICENSE`) instead of loaded from jsDelivr. The page works offline, and `tests/engine.cjs` uses the same file: no `npm i acorn` or `ACORN=` anymore.
 
+- README **Security**: what the recorder records and where it keeps it, why the replay uses `eval` and `with`, and how to check that `acorn.js` is the original (SHA-256).
+
 ### Fixed
 
 - The debugger's code (`replay.js`, `debugger.js`, `debugger.css`) was served to anyone at `/debug/assets/`: PocketPages serves static files without running `+middleware.js`. They are now in `pb_pages/debug/_private/` (never served) and written into the page, so only a signed-in superuser gets them. The login page has its own small style.
