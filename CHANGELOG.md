@@ -27,8 +27,8 @@ The successor of [pb-hooks-debugger](https://github.com/octavonu/pb-hooks-debugg
 ### Changed (later the same day)
 
 - acorn 8.19.0 is included (`pb_pages/debug/_private/acorn.js`, unchanged, with its MIT license in `acorn.LICENSE`) instead of loaded from jsDelivr. The page works offline, and `tests/engine.cjs` uses the same file: no `npm i acorn` or `ACORN=` anymore.
-
 - README **Security**: what the recorder records and where it keeps it, why the replay uses `eval` and `with`, and how to check that `acorn.js` is the original (SHA-256).
+- `tests/browsers.mjs`: tests the whole flow in Chrome, Firefox or Safari, with real key presses, using the browser's built-in WebDriver.
 
 ### Fixed
 

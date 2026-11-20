@@ -89,6 +89,7 @@ Remove both again to turn the debugger off completely.
 | `pb_pages/debug/_private/debugger.js`, `debugger.css` | The UI. `index.ejs` writes these three files into the page, so only a signed-in superuser gets them (`_private/` is never served). |
 | `pb_pages/debug/_private/acorn.js`, `acorn.LICENSE` | [acorn](https://github.com/acornjs/acorn) 8.19.0, the JavaScript parser the replay and the syntax highlighting use: `dist/acorn.js` from the npm package, unchanged, and its MIT license. Included so there's nothing to install and the debugger works offline. |
 | `tests/engine.cjs` | Replays every recording of a running app in Node: `EMAIL=… PASSWORD=… node tests/engine.cjs`. Uses the same `acorn.js`, so there's nothing to install. |
+| `tests/browsers.mjs` | Tests the whole flow in Chrome, Firefox or Safari on macOS, with real key presses: `BROWSER=chrome` (or `firefox`, `safari`) `EMAIL=… PASSWORD=… node tests/browsers.mjs`. Nothing to install: it uses the browser's built-in WebDriver (for Safari, turn it on once with `sudo safaridriver --enable`). It clears the recordings and creates a note, so use it on the demo app. |
 | `pb_hooks/main.pb.js`, `pb_hooks/lib/greet.js`, `pb_migrations/` | The demo app. |
 
 ## Tested with
@@ -102,7 +103,7 @@ Remove both again to turn the debugger off completely.
 
 In each browser: sign-in, recording (also a hook inside a hook), replay "same as on the server", breakpoints, all
 the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, and the hook files named `pb_hooks/…` in the browser's
-developer tools. On a Mac keyboard you may have to hold **fn** for the F keys.
+developer tools (`tests/browsers.mjs` in all three, plus a check by hand). On a Mac keyboard you may have to hold **fn** for the F keys.
 
 PocketOne is still in alpha: a newer release can change what hooks see, so the recorder and the replay may need
 updates.
