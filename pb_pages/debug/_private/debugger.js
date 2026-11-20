@@ -936,11 +936,13 @@ $("idle-wake").addEventListener("click", wake)
 document.addEventListener("keydown", (e) => {
   if (!state.trace || e.target.closest("input, textarea, select")) return
   const keys = { F8: e.shiftKey ? null : "continue", F5: "into", F6: e.shiftKey ? "back" : "over", F7: "out" }
-  if (e.key === "F8" && e.shiftKey) {
+  // e.code, not e.key: with Shift, Safari gives function keys the key "\u0010" (code is still "F6")
+  const key = /^F\d+$/.test(e.code) ? e.code : e.key
+  if (key === "F8" && e.shiftKey) {
     e.preventDefault()
     return !state.busy && replay()
   }
-  const name = keys[e.key]
+  const name = keys[key]
   if (!name) return
   e.preventDefault()
   if (name === "back" ? state.cur > 1 : state.view) run(name)

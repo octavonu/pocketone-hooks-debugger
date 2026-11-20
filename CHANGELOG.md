@@ -32,6 +32,7 @@ The successor of [pb-hooks-debugger](https://github.com/octavonu/pb-hooks-debugg
 
 ### Fixed
 
+- **Shift+F6** (Step Back) and **Shift+F8** (Replay from the start) did nothing in Safari: with Shift, Safari gives function keys the key `"\u0010"`. The page now reads `e.code` for F keys.
 - The debugger's code (`replay.js`, `debugger.js`, `debugger.css`) was served to anyone at `/debug/assets/`: PocketPages serves static files without running `+middleware.js`. They are now in `pb_pages/debug/_private/` (never served) and written into the page, so only a signed-in superuser gets them. The login page has its own small style.
 
 ### Upgrading

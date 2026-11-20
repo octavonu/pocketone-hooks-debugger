@@ -96,13 +96,16 @@ Remove both again to turn the debugger off completely.
 | | Version |
 |---|---|
 | PocketOne | **0.0.1-alpha.9** (PocketBase 0.42.3), the release binary for macOS (darwin/amd64) |
-| Browser | **Google Chrome 157** (157.0.8103.79). The replay runs in the browser's JS engine, here V8, not in PocketOne's QuickJS |
+| Browsers | **Google Chrome 157** (157.0.8103.79, V8), **Firefox 145.0** (SpiderMonkey), **Safari 26.6.2** (JavaScriptCore), on macOS. The replay runs in the browser's JS engine, not in PocketOne's QuickJS |
 | acorn | 8.19.0, included |
 | Node | 24.22.1, for `tests/engine.cjs` |
 
-Other browsers (Firefox, Safari) aren't tested yet. The page only uses standard JavaScript (`Proxy`, `eval`, `with`),
-so they should work. PocketOne is still in alpha: a newer release can change what hooks see, so the recorder and the
-replay may need updates.
+In each browser: sign-in, recording (also a hook inside a hook), replay "same as on the server", breakpoints, all
+the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, and the hook files named `pb_hooks/…` in the browser's
+developer tools. On a Mac keyboard you may have to hold **fn** for the F keys.
+
+PocketOne is still in alpha: a newer release can change what hooks see, so the recorder and the replay may need
+updates.
 
 ## Limitations
 
@@ -119,6 +122,8 @@ replay may need updates.
   be recorded into the wrong run.
 - **Recordings live in memory**: a restart or a hooks reload (e.g. after you edit a hook file) clears them.
 - Arrow functions with an expression body (`(e) => e.json(...)`) have no line to stop on.
+- **Safari:** an error's stack trace (e.g. `new Error().stack` in Evaluate) has no file name for hook code, because
+  Safari doesn't use `//# sourceURL` there. Web Inspector does show the files as `pb_hooks/…`.
 
 ## Security
 
