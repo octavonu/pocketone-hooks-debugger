@@ -895,6 +895,171 @@ async function importExamples(file) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Suggest examples: the app's language model ($agent) writes them     */
+/* ------------------------------------------------------------------ */
+
+const suggest = { routes: [], status: null, items: [], timer: null }
+
+async function openSuggest() {
+  $("sg").hidden = false
+  $("sg-info").textContent = "Loading…"
+  $("sg-ask").disabled = true
+  let r
+  try {
+    r = await api("/debug/api/suggest")
+  } catch (err) {
+    $("sg-info").textContent = err.message
+    return
+  }
+  suggest.routes = r.routes
+  suggest.status = r.status
+  const sel = $("sg-route")
+  sel.innerHTML = ""
+  r.routes.forEach((x, i) => sel.append(new Option(`${x.method} ${x.pattern}${x.file ? `  ·  ${x.file}:${x.line}` : ""}`, String(i))))
+  // the route that matches the form, if any
+  const method = $("req-method").value
+  const path = ($("req-path").value.split(/[?#]/)[0] || "").trim()
+  const match = r.routes.findIndex((x) => {
+    if (x.method !== method && x.method !== "*") return false
+    const re = "^" + x.pattern.replace(/[.*+?^$()|[\]\\]/g, "\\$&").replace(/\\?\{[^}]+\}/g, "[^/]+") + "$"
+    return new RegExp(re).test(path)
+  })
+  if (match >= 0) sel.value = String(match)
+  if (!r.routes.length) {
+    $("sg-info").textContent = "No routerAdd routes in your hooks."
+    return
+  }
+  showSuggestInfo()
+}
+
+function showSuggestInfo() {
+  const s = suggest.status
+  const route = suggest.routes[Number($("sg-route").value)]
+  if (!s || !s.ready) {
+    $("sg-ask").disabled = true
+    $("sg-info").textContent = `No language model: ${(s && s.message) || "not ready"}`
+    return
+  }
+  $("sg-ask").disabled = !route
+  const who = [s.model, s.backend && `(${s.backend})`].filter(Boolean).join(" ") || "the app's model"
+  $("sg-info").textContent = route
+    ? `Ask sends pb_hooks/${route.file} and the hook files it requires to ${who}. You pick which suggestions to save.`
+    : ""
+}
+
+async function askSuggest() {
+  clearTimeout(suggest.timer)
+  $("sg-ask").disabled = true
+  $("sg-list").innerHTML = ""
+  $("sg-save-row").hidden = true
+  $("sg-info").textContent = "Asking… (a few seconds, up to a minute)"
+  let job
+  try {
+    job = await api("/debug/api/suggest", { method: "POST", body: { route: Number($("sg-route").value) } })
+  } catch (err) {
+    $("sg-info").textContent = err.message
+    $("sg-ask").disabled = false
+    return
+  }
+  const t0 = Date.now()
+  const poll = async () => {
+    let r
+    try {
+      r = await api("/debug/api/suggest?job=" + encodeURIComponent(job.job))
+    } catch (err) {
+      $("sg-info").textContent = err.message
+      $("sg-ask").disabled = false
+      return
+    }
+    if (!r.done) {
+      if (Date.now() - t0 > 3 * 60 * 1000) {
+        $("sg-info").textContent = "No answer after 3 minutes."
+        $("sg-ask").disabled = false
+        return
+      }
+      $("sg-info").textContent = `Asking ${r.model || "the model"}… ${Math.round((Date.now() - t0) / 1000)} s`
+      suggest.timer = setTimeout(poll, 1000)
+      return
+    }
+    $("sg-ask").disabled = false
+    if (r.error) {
+      $("sg-info").textContent = "The model failed: " + r.error
+      return
+    }
+    showSuggestions(r.examples || [], r.model)
+  }
+  suggest.timer = setTimeout(poll, 800)
+}
+
+// The model's answer is untrusted: each example goes through cleanExample (paths on this server only), and is
+// shown as text. Suggested examples are dry runs.
+function showSuggestions(list, model) {
+  suggest.items = list.map((raw) => ({ raw, x: cleanExample({ ...raw, dry: true }) }))
+  // a small model may give several the same name: number them, or saving would keep only the last one
+  const seen = {}
+  for (const item of suggest.items) {
+    if (!item.x) continue
+    const base = item.x.name
+    seen[base] = (seen[base] || 0) + 1
+    if (seen[base] > 1) item.x.name = `${base} (${seen[base]})`.slice(0, 120)
+  }
+  const ok = suggest.items.filter((i) => i.x).length
+  $("sg-info").textContent = `${model || "The model"} suggested ${list.length}${ok < list.length ? `, ${list.length - ok} not valid` : ""}. Pick the ones to save:`
+  const ul = $("sg-list")
+  ul.innerHTML = ""
+  suggest.items.forEach((item, i) => {
+    const li = document.createElement("li")
+    const label = document.createElement("label")
+    const box = document.createElement("input")
+    box.type = "checkbox"
+    box.dataset.i = String(i)
+    box.checked = !!item.x
+    box.disabled = !item.x
+    const name = document.createElement("span")
+    const x = item.x || item.raw || {}
+    const replaces = item.x && examples.some((e) => e.name === item.x.name)
+    name.textContent = String(x.name ?? "(no name)") + (replaces ? "  (replaces yours)" : "")
+    const req = document.createElement("span")
+    req.className = "sg-req"
+    req.textContent = `${String(x.method ?? "")} ${String(x.path ?? "")}${x.body ? "  " + String(x.body) : ""}${item.x && item.x.superuser ? "  · as superuser" : ""}`
+    label.append(box, name, req)
+    if (!item.x) {
+      const skip = document.createElement("span")
+      skip.className = "sg-skip"
+      skip.textContent = "Not valid (a path on this server, a method and a name are needed): can't be saved."
+      label.append(skip)
+    }
+    li.append(label)
+    ul.append(li)
+  })
+  $("sg-save-row").hidden = !ok
+}
+
+function saveSuggestions() {
+  let n = 0
+  for (const box of $("sg-list").querySelectorAll("input[type=checkbox]:checked")) {
+    const item = suggest.items[Number(box.dataset.i)]
+    if (!item || !item.x) continue
+    const i = examples.findIndex((e) => e.name === item.x.name)
+    if (i >= 0) examples[i] = item.x
+    else examples.push(item.x)
+    n++
+  }
+  if (!n) return toast("Nothing selected.")
+  saveExamples()
+  renderExamples()
+  toast(`Saved ${n} example${n === 1 ? "" : "s"} in this browser.`)
+  closeSuggest()
+}
+
+function closeSuggest() {
+  clearTimeout(suggest.timer)
+  $("sg").hidden = true
+  $("sg-list").innerHTML = ""
+  $("sg-save-row").hidden = true
+}
+
+/* ------------------------------------------------------------------ */
 /* Layout (resizable columns) and idle, as v1                          */
 /* ------------------------------------------------------------------ */
 
@@ -1112,6 +1277,11 @@ $("ex-name").addEventListener("keydown", (e) => {
   else if (e.key === "Escape") showNameRow(false)
 })
 $("ex-delete").addEventListener("click", deleteExample)
+$("sg-open").addEventListener("click", () => ($("sg").hidden ? openSuggest() : closeSuggest()))
+$("sg-route").addEventListener("change", showSuggestInfo)
+$("sg-ask").addEventListener("click", askSuggest)
+$("sg-close").addEventListener("click", closeSuggest)
+$("sg-save").addEventListener("click", saveSuggestions)
 $("ex-export").addEventListener("click", exportExamples)
 $("ex-import").addEventListener("click", () => $("ex-file").click())
 $("ex-file").addEventListener("change", async (e) => {

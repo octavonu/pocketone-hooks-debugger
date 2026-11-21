@@ -381,6 +381,31 @@ try {
       wrong: bad.filter((p) => !checkPath(p).error),
     }`)
   check("path checker: only paths on this server", r.ok.every(([, v]) => v.startsWith("/api/")) && !r.wrong.length, r)
+
+  // 9. Suggest examples: without a model, says so; with one, the suggestions are checked before they can be saved
+  r = await d.run(`
+    const $ = (id) => document.getElementById(id)
+    const waitFor = async (f, ms = 30000) => { const t = Date.now(); while (!f()) { if (Date.now() - t > ms) throw new Error("timeout: " + f); await new Promise((r) => setTimeout(r, 50)) } }
+    localStorage.removeItem("dbg2.examples"); examples.length = 0; renderExamples()
+    $("req-method").value = "POST"; $("req-path").value = "/api/notes"
+    $("sg-open").click()
+    await waitFor(() => $("sg-info").textContent !== "Loading…")
+    const route = $("sg-route").selectedOptions[0] && $("sg-route").selectedOptions[0].textContent
+    if (!suggest.status.ready) return { ready: false, route, info: $("sg-info").textContent, ask: $("sg-ask").disabled }
+    $("sg-ask").click()
+    await waitFor(() => !$("sg-save-row").hidden || /failed|after/.test($("sg-info").textContent), 120000)
+    const items = [...$("sg-list").querySelectorAll("li")].map((li) => ({ text: li.textContent, on: li.querySelector("input").checked, off: li.querySelector("input").disabled }))
+    const html = $("sg-list").querySelectorAll("img, script").length
+    $("sg-save").click()
+    const saved = examples.map((x) => ({ name: x.name, path: x.path, dry: x.dry }))
+    localStorage.removeItem("dbg2.examples")
+    return { ready: true, model: suggest.status.model, route, items, html, saved }`)
+  if (!r.ready) {
+    check("suggest examples: no model -> says so, Ask disabled", /No language model/.test(r.info) && r.ask && /POST \/api\/notes/.test(r.route), r)
+  } else {
+    check("suggest examples: asked, checked, saved", /POST \/api\/notes/.test(r.route) && r.html === 0 && r.saved.length > 0 &&
+      r.saved.every((x) => x.path.startsWith("/") && !x.path.startsWith("//") && x.dry), r)
+  }
 } catch (e) {
   check("no unexpected error", false, String(e))
 } finally {

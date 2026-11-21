@@ -36,7 +36,7 @@ flowchart LR
     REC["00_dbg.pb.js<br/>the recorder"]
     H["Your hooks<br/>pb_hooks/*.pb.js"]
     MEM[("Recordings<br/>in memory, last 50")]
-    API["pb_pages/debug/api/<br/>files, recordings, presence"]
+    API["pb_pages/debug/api/<br/>files, recordings, presence, suggest"]
   end
 
   DB[("Database")]
@@ -107,6 +107,11 @@ sequenceDiagram
   "dry run"), pick one to fill in the form. Kept in this browser only (localStorage, like breakpoints): nothing is
   written to the server or the app folder. **Export** downloads them as `requests.json`, **Import** loads such a
   file (same names are replaced), so you can share them or keep them in git yourself.
+- **Suggest examples…** (needs PocketOne's `$agent`, a language model set up in the dashboard under Settings → LLM,
+  or in `pocketone.yaml`): pick a route, and the model reads its hook file (and the hook files it `require`s) and
+  suggests example requests: the normal case, the error cases, edge cases. You see them first and save the ones
+  you want; they're checked like an import and saved as dry runs. The panel says which model gets your code. The
+  question runs in the background, so a slow model isn't cut off by PocketOne's 30 s limit for a request.
 - **Only this server.** The request runner sends only to paths on this server (`/api/notes`, or a full address on
   this server). It refuses other sites (`https://…`, `//site/…`), a path without `/` (`www.site.de/…`),
   backslashes, spaces and control characters, so an imported file can't send your requests (or your superuser
@@ -166,6 +171,7 @@ Remove both again to turn the debugger off completely.
 | `pb_pages/debug/login/`, `logout/` | Sign in and out. |
 | `pb_pages/debug/index.ejs` | The page. |
 | `pb_pages/debug/api/files`, `recordings`, `presence` | JSON for the page: the hook files with their sources, the recordings, the heartbeat. |
+| `pb_pages/debug/api/suggest` | Suggest examples: the routes, the model's status, and the question to `$agent` (in the background). |
 | `pb_pages/debug/_private/replay.js` | The replay engine: the fakes, the instrumentation (acorn), the tracer, and the inspector for variables and Evaluate. |
 | `pb_pages/debug/_private/debugger.js`, `debugger.css` | The UI. `index.ejs` writes these three files into the page, so only a signed-in superuser gets them (`_private/` is never served). |
 | `pb_pages/debug/_private/acorn.js`, `acorn.LICENSE` | [acorn](https://github.com/acornjs/acorn) 8.19.0, the JavaScript parser the replay and the syntax highlighting use: `dist/acorn.js` from the npm package, unchanged, and its MIT license. Included so there's nothing to install and the debugger works offline. |
@@ -232,6 +238,12 @@ the page: someone who isn't signed in gets only the sign-in form. You can check:
   runs in the same JS VM, so it could read them too, like anything else there.)
 - masks the `Authorization`, `Cookie` and `Set-Cookie` headers in the views. They stay in the recording, because the
   replay needs the same values.
+
+**Suggest examples** is the only part that sends anything out, and only when you click **Ask**: it sends the
+route's hook file and the hook files it requires (no recordings, no data) to the language model your app is set up
+with in `$agent`. That is a model PocketOne runs on your machine, your own API key's provider, or your host's; the
+panel names it before you ask. The answer is treated as untrusted: every example is checked like an import (paths
+on this server only), shown as text, and saved only if you pick it.
 
 **`eval` and `with`.** Security scanners flag them, so here is why they are there. The replay (`replay.js`) runs
 **your own hook files, in your own browser**: it reads them from your server, adds the step probes in memory and

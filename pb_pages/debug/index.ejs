@@ -136,6 +136,22 @@
               <button id="ex-import" title="Load examples from a .json file (examples with the same name are replaced)">Import</button>
               <input type="file" id="ex-file" accept=".json,application/json" hidden />
             </div>
+            <div class="row">
+              <button id="sg-open" title="Ask the app's language model ($agent) for example requests for a route. You pick which ones to save.">Suggest examples…</button>
+            </div>
+            <div class="suggest" id="sg" hidden>
+              <div class="row">
+                <select id="sg-route" title="The route to suggest examples for"></select>
+                <button id="sg-ask" class="primary">Ask</button>
+                <button id="sg-close">Close</button>
+              </div>
+              <div class="sg-info muted" id="sg-info"></div>
+              <ul class="sg-list" id="sg-list"></ul>
+              <div class="row" id="sg-save-row" hidden>
+                <span class="spacer"></span>
+                <button id="sg-save" class="primary">Save selected</button>
+              </div>
+            </div>
             <div class="row" id="ex-name-row" hidden>
               <input id="ex-name" placeholder="A name, e.g. empty text gives 400" spellcheck="false" autocomplete="off" />
               <button id="ex-name-ok" class="primary">Save</button>

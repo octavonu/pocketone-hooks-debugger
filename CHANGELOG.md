@@ -7,6 +7,7 @@ Notable changes to the PocketOne Hooks Debugger. There are no version numbers ye
 ### Added
 
 - **Dry run**: a checkbox next to Send, on by default. The route's handler runs inside a database transaction that is always rolled back, so nothing is saved; you still get the response (with an `X-Dbg-Dry: rolled back` header) and the recording. Only for `routerAdd` handlers that aren't `async`; the page says when a request wasn't a dry run. `tests/browsers.mjs` checks it.
+- **Suggest examples…**: the app's language model (PocketOne's `$agent`) reads a route's hook file and suggests example requests; you pick which ones to save (as dry runs, checked like an import). Runs in the background, so a slow model isn't cut off by the 30 s request limit. New `pb_pages/debug/api/suggest`, and `__dbg.routes()` in the recorder. Tested with a fake model, with qwen3-0.6b (PocketOne's built-in model: it works, about 30 s, but its suggestions are weak), and without a model (the panel says how to set one up). Duplicate names in an answer are numbered, so saving keeps them all.
 - **Saved examples** of requests, above the request runner: Save, pick one to fill in the form, Delete, and **Export** / **Import** as `requests.json`. Kept in the browser (localStorage), never on the server. `tests/browsers.mjs` checks them.
 
 ### Fixed

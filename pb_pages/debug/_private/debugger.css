@@ -262,6 +262,13 @@ body.resizing iframe, body.resizing .code { pointer-events: none; }
 .runner .row input { flex: 1; font-family: var(--mono); font-size: 12.5px; }
 .runner .examples select { flex: 1; min-width: 0; }
 .runner .examples button { padding-left: 7px; padding-right: 7px; }
+.runner .suggest { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
+.runner .suggest select { flex: 1; min-width: 0; }
+.sg-info { font-size: .8rem; }
+.sg-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; }
+.sg-list label { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: start; color: var(--text); }
+.sg-list .sg-req { grid-column: 2; font: 11.5px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.sg-list .sg-skip { grid-column: 2; font-size: .75rem; color: var(--bp); }
 .runner textarea { font-family: var(--mono); font-size: 12.5px; min-height: 52px; resize: vertical; }
 .runner label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: .85rem; }
 .runner .out pre { font: 12px/1.45 var(--mono); }

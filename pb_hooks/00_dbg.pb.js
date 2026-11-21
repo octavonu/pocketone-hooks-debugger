@@ -391,11 +391,13 @@ function __dbgCaller() {
   return null
 }
 
+const __dbgRoutes = [] // every routerAdd, for the page's "Suggest examples"
 const __dbgRealRouterAdd = routerAdd
 globalThis.routerAdd = function (method, pattern, handler, ...middlewares) {
   const key = `routerAdd(${JSON.stringify(method)},${JSON.stringify(pattern)})`
   const n = __dbgNth(key)
   const where = __dbgCaller()
+  __dbgRoutes.push({ method: String(method), pattern: String(pattern), file: where && where.file, line: where && where.line })
   return __dbgRealRouterAdd(
     method,
     pattern,
@@ -453,6 +455,11 @@ globalThis.__dbg = {
 
   get(id) {
     return __dbgRecs.find((r) => r.id === Number(id)) || null
+  },
+
+  // the routes registered with routerAdd: { method, pattern, file, line }
+  routes() {
+    return __dbgRoutes.map((r) => ({ ...r }))
   },
 
   clear() {
