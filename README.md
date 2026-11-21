@@ -20,6 +20,68 @@ recorded, and the browser replays them, so you can also step back.
    variables at a step, or evaluate an expression there, the replay runs again up to that step. That takes a few
    milliseconds, and the result is the same each time.
 
+### The parts
+
+The server records, the browser replays. They share nothing but the hook files and the recordings.
+
+```mermaid
+flowchart LR
+  subgraph B["Your browser: the debugger page /debug/"]
+    UI["debugger.js<br/>files, breakpoints, step keys,<br/>Variables, Evaluate"]
+    RUN["Request runner<br/>(Send, dry run)"]
+    RP["replay.js + acorn<br/>runs your hook files again,<br/>against fakes"]
+  end
+
+  subgraph S["PocketOne server: one JS VM"]
+    REC["00_dbg.pb.js<br/>the recorder"]
+    H["Your hooks<br/>pb_hooks/*.pb.js"]
+    MEM[("Recordings<br/>in memory, last 50")]
+    API["pb_pages/debug/api/<br/>files, recordings, presence"]
+  end
+
+  DB[("Database")]
+
+  UI -- "heartbeat every 5 s<br/>(I'm here, my token)" --> API
+  RUN -- "1. a normal HTTP request<br/>+ dbg cookie / X-Dbg-Dry" --> REC
+  REC -- "2. runs your handler,<br/>logs every answer from Go" --> H
+  H -- "reads and writes<br/>(rolled back in a dry run)" --> DB
+  REC -- "3. saves the log" --> MEM
+  API -- "reads" --> MEM
+  UI -- "4. gets the hook files<br/>and the recording" --> API
+  UI -- "5. replay, step, look" --> RP
+```
+
+### One Send, step by step
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant P as Debugger page (browser)
+  participant R as Recorder (00_dbg.pb.js)
+  participant H as Your handler
+  participant G as Go ($app, e, the database)
+
+  loop every 5 seconds
+    P->>R: heartbeat: tab open, token
+  end
+  P->>R: POST /api/notes (dbg cookie, X-Dbg-Dry)
+  R->>R: record this request? (a tab is open and the token matches)
+  R->>G: dry run: start a transaction
+  R->>H: run it, with $app and e wrapped in Proxies
+  H->>G: $app.save(record)
+  G-->>H: answer (the Proxy writes it to the log)
+  H->>G: $app.countRecords("notes")
+  G-->>H: 18 (logged too)
+  H-->>P: response 201 (sent for real)
+  R->>G: dry run: roll the transaction back
+  R->>R: keep the log in memory
+  P->>R: GET the hook files and the recording
+  Note over P: From here on, the server isn't involved.
+  P->>P: replay: run the same hook files with fakes<br/>that answer from the log, and record a trace
+  P->>P: Step Into / Over / Out / Back: move through the trace
+  P->>P: Variables, Evaluate: replay again up to that step
+```
+
 ## Features
 
 - A file tree with subfolders, editor tabs with syntax highlighting, breakpoints on line numbers, a call stack (click
