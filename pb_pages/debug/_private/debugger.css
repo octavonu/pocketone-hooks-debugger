@@ -258,6 +258,8 @@ body.resizing iframe, body.resizing .code { pointer-events: none; }
 .bplist a:hover { color: var(--accent); }
 .bplist .x { margin-left: auto; padding: 0 6px; font-size: .8rem; }
 .runner { display: grid; gap: 6px; padding: 0 14px; }
+/* grid items don't shrink below their content by default: let long example names and routes shrink instead */
+.runner > *, .runner .suggest > * { min-width: 0; }
 .runner .row { display: flex; gap: 6px; }
 .runner .row input { flex: 1; font-family: var(--mono); font-size: 12.5px; }
 .runner .examples select { flex: 1; min-width: 0; }

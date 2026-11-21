@@ -5,7 +5,7 @@ A file tree, tabs, breakpoints on line numbers, a call stack, Variables / Breakp
 runner, like a debugger in an IDE. But **nothing is rewritten and nothing pauses on the server**: requests are
 recorded, and the browser replays them, so you can also step back.
 
-![Paused inside greet() in lib/greet.js after Step Into, with the call stack, the variables and the recordings list](docs/screenshot.jpg)
+![Paused at a breakpoint in POST /api/notes after a dry run, with the variables, the recordings list, saved examples and the Suggest examples panel](docs/screenshot.jpg)
 
 ## How it works
 

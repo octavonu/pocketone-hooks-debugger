@@ -13,6 +13,8 @@ Notable changes to the PocketOne Hooks Debugger. There are no version numbers ye
 ### Fixed
 
 - The request runner sends only to this server: a path like `//other.site/x` used to send the request there, with the superuser token when "as superuser" was ticked. Now every path is checked (typed or imported): only `/…` paths or full addresses on this server; no other sites, no path without `/`, no backslashes, spaces or control characters.
+- In a narrow right column, the examples row and the Suggest panel stuck out past the edge (Export and Import were cut off): the runner's grid items now shrink.
+- A new README screenshot: a dry run, saved examples and Suggest examples (the suggestions in it come from a stand-in model, as no model was set up).
 - After a request that wasn't a dry run but failed (e.g. 404), the page no longer says "its changes were saved".
 - A hook that runs inside a transaction (e.g. inside `$app.runInTransaction()`) now gets the transaction's `$app` while it's recorded, as without the debugger. Before, it got the app's normal `$app`, and a write through it would wait for the transaction's lock.
 
