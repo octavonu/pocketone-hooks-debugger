@@ -17,6 +17,12 @@ Notable changes to the PocketOne Hooks Debugger. There are no version numbers ye
 - A new README screenshot: a dry run, saved examples and Suggest examples (the suggestions in it come from a stand-in model, as no model was set up).
 - After a request that wasn't a dry run but failed (e.g. 404), the page no longer says "its changes were saved".
 - A hook that runs inside a transaction (e.g. inside `$app.runInTransaction()`) now gets the transaction's `$app` while it's recorded, as without the debugger. Before, it got the app's normal `$app`, and a write through it would wait for the transaction's lock.
+- **`$wasm` works while recording.** Every handler that used `$wasm` failed with `TypeError: proxy: inconsistent get` while a debugger tab was open: `$wasm` is frozen, and a Proxy may not answer a frozen property with a wrapped method. An object with frozen properties now gets an empty stand-in as the Proxy's target.
+- **Promises from Go are recorded** (e.g. `$wasm.run.async`): what a promise gives is logged under `<call>.await`, and the replay gives it back when it's awaited. A method's own methods (`$wasm.run.async`) are recorded too, and `.then` reads (what `await` looks for) are no longer logged.
+- **Errors keep their fields**: the replay throws an error with the same `name`, `message` and fields (e.g. a `WasmError`'s `code`, `retryable`, `module`), so a `catch` that reads them takes the same path.
+- **Go values inside the handler's own objects** (e.g. `e.json(200, { limits: $wasm.limits() })`): Go now gets the real values, not the recorder's Proxies, so it no longer reads through them (one such response logged 552 answers instead of 3). Both sides write them in the call's key as `"@<path>"`.
+- **Middleware arguments no longer stop the replay**: `$apis.requireSuperuserAuth()` passed to `routerAdd` failed with "not in the recording". What top-level code gets from Go while the hook files load is now a stand-in that does nothing.
+- Tested on a PocketHost instance that runs PocketOne: async routes with `$wasm` replay "same as on the server". `tests/browsers.mjs`: 18/18 in Chrome.
 
 ## 2026-11-20: first release
 

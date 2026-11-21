@@ -118,6 +118,9 @@ sequenceDiagram
   token) somewhere else. Imported examples with such a path are skipped.
 - **Step Back** (Shift+F6) and **Replay from the start** (Shift+F8).
 - **Recorded** tab: what Go answered during the run, highlighted up to the current step.
+- **Async handlers and `$wasm`**: a promise from Go (e.g. `await $wasm.run.async("summary", input)`) is recorded
+  with what it gave, or its error with the error's fields (a `WasmError`'s `code`, `retryable`, `module`). So you can
+  stop on the line after the `await` and see the result in Variables. Frozen globals like `$wasm` are recorded too.
 - At the end: **Finished: same as on the server** and the response, or what differs (e.g. the file changed since the
   recording).
 - Your hook files are never changed, the hooks never restart, a pause has no time limit, and the debugger needs no
@@ -187,6 +190,7 @@ Remove both again to turn the debugger off completely.
 | Browsers | **Google Chrome 157** (157.0.8103.79, V8), **Firefox 145.0** (SpiderMonkey), **Safari 26.6.2** (JavaScriptCore), on macOS. The replay runs in the browser's JS engine, not in PocketOne's QuickJS |
 | acorn | 8.19.0, included |
 | Node | 24.22.1, for `tests/engine.cjs` |
+| PocketHost | an instance on PocketHost's PocketOne (`X-Powered-By: Pocker 0.0.1-dev+7da9aa9f`), 2026-11-21, in Chrome: async routes with `$wasm` (Go, Rust and WAT modules, an error, a module's examples) recorded, paused after the `await`, and replayed "same as on the server" |
 
 In each browser: sign-in, recording (also a hook inside a hook), replay "same as on the server", breakpoints, all
 the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, a dry run, saved examples (save, import, delete; not Export's download), and the hook files named `pb_hooks/…` in the browser's
@@ -198,7 +202,8 @@ updates.
 ## Limitations
 
 - **PocketOne only.** The recorder relies on all hooks and pages sharing one JS VM, and the UI on PocketPages. For
-  plain PocketBase (and PocketHost today) see [the earlier version](#earlier-version-plain-pocketbase).
+  plain PocketBase (e.g. a PocketHost instance that doesn't run PocketOne) see
+  [the earlier version](#earlier-version-plain-pocketbase).
 - **CommonJS `.js` hook files only** for now (not `.pb.mjs` or `.pb.ts`). The replay runs in the browser's JS engine,
   not QuickJS. That rarely matters for hook code.
 - **Go objects show a snapshot** taken when the handler first got them, e.g. a record before its `set()` calls.
@@ -206,6 +211,10 @@ updates.
   in the run (e.g. `record.get("text")` before `$app.save()` shows the value after the save hooks). Properties the
   handler never read come from the snapshot. Methods it never called aren't available.
 - **Not recorded yet:** middlewares (`routerUse` and a route's own middlewares), and `new Date()` without arguments.
+  The replay skips a route's middlewares: what top-level code gets from Go while the hook files load (e.g.
+  `$apis.requireSuperuserAuth()` passed to `routerAdd`) is a stand-in that does nothing.
+- **Go values inside your own objects** (e.g. `e.json(200, { out })`, where `out` came from Go) are shown by their
+  path in the Recorded tab and the response, like `"out": "@$wasm.run.async(…).await"`, not by their content.
 - **Async handlers:** other requests can run during an `await` and see the recorder's wrapped globals, so they may
   be recorded into the wrong run.
 - **Dry run** works only for `routerAdd` handlers that aren't `async`: after an `await`, PocketOne gives `$app` back

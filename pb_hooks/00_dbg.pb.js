@@ -186,6 +186,24 @@ function __dbgIsGo(v) {
   }
 }
 
+// Has the object a property a Proxy can't answer with another value (not writable and not configurable)?
+const __dbgFrozen = new WeakMap()
+function __dbgHasFrozen(v) {
+  if (v === null || (typeof v !== "object" && typeof v !== "function")) return false
+  if (__dbgFrozen.has(v)) return __dbgFrozen.get(v)
+  let frozen = false
+  try {
+    frozen =
+      !Object.isExtensible(v) ||
+      Object.getOwnPropertyNames(v).some((k) => {
+        const d = Object.getOwnPropertyDescriptor(v, k)
+        return d && !d.configurable && "value" in d && !d.writable
+      })
+  } catch (_) {}
+  __dbgFrozen.set(v, frozen)
+  return frozen
+}
+
 // One run's log. Every answer is logged under a key: its path from the root plus the call's arguments, e.g.
 // `e.request.pathValue("name")`. Objects are wrapped again, so what's read from them is logged too.
 function __dbgRecorder() {
@@ -193,12 +211,31 @@ function __dbgRecorder() {
   const targets = new WeakMap() // proxy -> { target, path }
 
   const unwrap = (v) => (targets.has(v) ? targets.get(v).target : v)
+  // Plain objects and arrays the handler made can hold wrapped values, e.g. e.json(200, { limits: $wasm.limits() }).
+  // swap: a copy with each wrapped value replaced by `swap(proxy)`; the same object when there's none.
+  const deep = (v, swap, seen = new Set()) => {
+    if (targets.has(v)) return swap(v)
+    if (v === null || typeof v !== "object" || seen.has(v)) return v
+    const arr = Array.isArray(v)
+    if (!arr && Object.getPrototypeOf(v) !== Object.prototype) return v
+    seen.add(v)
+    const out = arr ? [] : {}
+    let changed = false
+    for (const k of Object.keys(v)) {
+      const x = deep(v[k], swap, seen)
+      if (x !== v[k]) changed = true
+      out[k] = x
+    }
+    return changed ? out : v
+  }
+  // what Go gets: the real values, also inside the handler's own objects (so Go doesn't read through the proxies)
+  const real = (v) => deep(v, unwrap)
   const argKey = (args) =>
     args
       .map((a) => {
         if (targets.has(a)) return "@" + targets.get(a).path
         try {
-          return JSON.stringify(a) ?? "undefined"
+          return JSON.stringify(deep(a, (p) => "@" + targets.get(p).path)) ?? "undefined"
         } catch (_) {
           return "?"
         }
@@ -208,7 +245,29 @@ function __dbgRecorder() {
   const typeOf = (v) => (__dbgIsGo(v) ? String(v).slice(4, -1) : Array.isArray(v) ? "array" : typeof v)
 
   // primitive: its value; object: its type and a snapshot to show, and it's wrapped (the browser gets a fake)
+  // an error keeps its own fields (e.g. a WasmError's code, retryable, module), so the replay can throw the same
+  const failed = (key, err) => {
+    const entry = { k: key, err: String(err) }
+    if (err !== null && typeof err === "object") {
+      try {
+        entry.fields = JSON.parse(JSON.stringify({ name: err.name, message: err.message, ...err }))
+      } catch (_) {}
+    }
+    log.push(entry)
+  }
+
   const answer = (key, value) => {
+    // a promise (e.g. $wasm.run.async): logged as one, and what it gives is logged under `<key>.await`
+    if (value instanceof Promise) {
+      log.push({ k: key, promise: true })
+      return value.then(
+        (v) => answer(key + ".await", v),
+        (err) => {
+          failed(key + ".await", err)
+          throw err
+        },
+      )
+    }
     if (targets.has(value)) {
       log.push({ k: key, ref: targets.get(value).path })
       return value
@@ -226,17 +285,41 @@ function __dbgRecorder() {
     try {
       r = fn()
     } catch (err) {
-      log.push({ k: key, err: String(err) })
+      failed(key, err)
       throw err
     }
     return answer(key, r)
   }
 
+  // a method, recorded when called; its own methods too, one level (e.g. $wasm.run.async)
+  const method = (path, self, v, sub = true) => {
+    const fn = (...args) => call(`${path}(${argKey(args)})`, () => v.apply(self, args.map(real)))
+    if (!sub) return fn
+    let names = []
+    try {
+      names = Object.getOwnPropertyNames(v).filter((k) => k !== "length" && k !== "name" && k !== "prototype")
+    } catch (_) {}
+    for (const k of names) {
+      let f
+      try {
+        f = v[k]
+      } catch (_) {
+        continue
+      }
+      if (typeof f === "function") fn[k] = method(`${path}.${k}`, v, f, false)
+    }
+    return fn
+  }
+
   // overrides: properties answered with another value (a dry run's e.app is the transaction's app)
   const wrap = (target, path, overrides) => {
-    let p
-    p = new Proxy(target, {
-      get(t, prop) {
+    // A Proxy must answer a frozen property (not writable, not configurable) with the property's own value, or JS
+    // throws "proxy: inconsistent get". $wasm is frozen, and we answer with wrapped methods. So such an object gets
+    // a stand-in as the Proxy's target, and the traps use the real one.
+    const shadow = __dbgHasFrozen(target) ? (typeof target === "function" ? function () {} : {}) : null
+    const t = target
+    const traps = {
+      get(_, prop) {
         if (overrides && typeof prop === "string" && Object.prototype.hasOwnProperty.call(overrides, prop)) {
           return answer(`${path}.${prop}`, overrides[prop])
         }
@@ -246,25 +329,35 @@ function __dbgRecorder() {
             for (let i = 0; i < p.length; i++) yield p[i]
           }
         }
-        if (typeof prop === "symbol") return t[prop]
+        // `then` is what `await` looks for: not recorded (the replay's fakes have none), so awaiting a value is free
+        if (typeof prop === "symbol" || prop === "then") return t[prop]
         const v = t[prop]
-        if (typeof v === "function") {
-          return (...args) => call(`${path}.${prop}(${argKey(args)})`, () => v.apply(t, args.map(unwrap)))
-        }
+        if (typeof v === "function") return method(`${path}.${prop}`, t, v)
         return answer(`${path}.${prop}`, v)
       },
-      set(t, prop, value) {
+      set(_, prop, value) {
         log.push({ k: `${path}.${String(prop)}=${argKey([value])}`, u: true })
-        t[prop] = unwrap(value)
+        t[prop] = real(value)
         return true
       },
-      apply(t, self, args) {
-        return call(`${path}(${argKey(args)})`, () => Reflect.apply(t, unwrap(self), args.map(unwrap)))
+      apply(_, self, args) {
+        return call(`${path}(${argKey(args)})`, () => Reflect.apply(t, unwrap(self), args.map(real)))
       },
-      construct(t, args) {
-        return call(`new ${path}(${argKey(args)})`, () => Reflect.construct(t, args.map(unwrap)))
+      construct(_, args) {
+        return call(`new ${path}(${argKey(args)})`, () => Reflect.construct(t, args.map(real)))
       },
-    })
+    }
+    if (shadow) traps.has = (_, prop) => prop in t
+    if (shadow && typeof shadow !== "function") {
+      // the stand-in is empty: Object.keys() and descriptors come from the real object (as configurable, which the
+      // stand-in allows; a function stand-in has its own `prototype`, so it keeps its own keys)
+      traps.ownKeys = () => Reflect.ownKeys(t)
+      traps.getOwnPropertyDescriptor = (_, prop) => {
+        const d = Reflect.getOwnPropertyDescriptor(t, prop)
+        return d && { ...d, configurable: true }
+      }
+    }
+    const p = new Proxy(shadow || target, traps)
     targets.set(p, { target, path })
     __dbgRealOf.set(p, target)
     return p

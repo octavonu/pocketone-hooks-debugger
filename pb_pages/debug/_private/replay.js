@@ -28,19 +28,54 @@
       if (!methods.has(base)) methods.set(base, entries.some((x) => x.k.startsWith(base + "(")))
       return methods.get(base)
     }
+    // a method with its own methods (e.g. $wasm.run, called as $wasm.run.async(…)): never read as a value itself
+    const parents = new Map()
+    const hasMethods = (base) => {
+      if (!parents.has(base)) parents.set(base, !queues.has(base) && entries.some((x) => x.k.startsWith(base + ".")))
+      return parents.get(base)
+    }
     const info = new WeakMap() // fake -> { path, type, view }
     const byPath = new Map()
     const used = new Set() // indexes of the answers given so far
     const last = new Map() // key -> the last answer given for it
     const misses = []
     let peeking = false // while inspecting: answer without using up the recording
+    let loadingFiles = false // while the hook files load: their top-level code isn't in the recording
 
+    // A stand-in for what top-level code gets from Go, e.g. `$apis.requireSuperuserAuth()` passed to routerAdd: it
+    // ran when the server loaded the hooks, not in the handler, so the recording doesn't have it. It does nothing.
+    const stub = (key) => {
+      const s = new Proxy(function () {}, {
+        get: (_, prop) =>
+          prop === Symbol.toPrimitive ? () => `[not recorded: ${key}]` : typeof prop === "symbol" || prop === "then" ? undefined : s,
+        apply: () => s,
+        construct: () => s,
+      })
+      return s
+    }
+
+    // as in the recorder: a fake inside the handler's own objects and arrays is written as "@<its path>"
+    const refs = (v, seen = new Set()) => {
+      if (info.has(v)) return "@" + info.get(v).path
+      if (v === null || typeof v !== "object" || seen.has(v)) return v
+      const arr = Array.isArray(v)
+      if (!arr && Object.getPrototypeOf(v) !== Object.prototype) return v
+      seen.add(v)
+      const out = arr ? [] : {}
+      let changed = false
+      for (const k of Object.keys(v)) {
+        const x = refs(v[k], seen)
+        if (x !== v[k]) changed = true
+        out[k] = x
+      }
+      return changed ? out : v
+    }
     const argKey = (args) =>
       args
         .map((a) => {
           if (info.has(a)) return "@" + info.get(a).path
           try {
-            return JSON.stringify(a) ?? "undefined"
+            return JSON.stringify(refs(a)) ?? "undefined"
           } catch (_) {
             return "?"
           }
@@ -48,7 +83,13 @@
         .join(",")
 
     const value = (x, key) => {
-      if (x.err) throw new Error(x.err.replace(/^Error: /, ""))
+      if (x.err) {
+        const err = new Error(x.err.replace(/^Error: /, ""))
+        if (x.fields) Object.assign(err, x.fields) // e.g. a WasmError's name, code, retryable, module
+        throw err
+      }
+      // a promise (e.g. $wasm.run.async): what it gave is under `<key>.await`, taken when it's awaited
+      if (x.promise) return Promise.resolve().then(() => take(key + ".await"))
       if (x.ref) return byPath.get(x.ref)
       if (x.go) return fake(key, x.go, x.view)
       return x.u ? undefined : x.v
@@ -63,6 +104,7 @@
         throw new Miss("not in the recording: " + key)
       }
       if (!q || q.length === 0) {
+        if (loadingFiles) return stub(key)
         misses.push(key)
         throw new Miss("not in the recording: " + key)
       }
@@ -85,6 +127,7 @@
           }
           if (typeof prop === "symbol" || prop === "then") return undefined
           const base = `${path}.${prop}`
+          if (hasMethods(base)) return fake(base, "function")
           if (isMethod(base)) return (...args) => take(`${base}(${argKey(args)})`)
           const snap = view !== null && typeof view === "object" && prop in view ? () => view[prop] : null
           return take(base, snap)
@@ -112,6 +155,7 @@
       misses,
       unused: () => entries.filter((x) => !used.has(x.i)),
       peek: (on) => (peeking = on),
+      loading: (on) => (loadingFiles = on),
     }
   }
 
@@ -402,9 +446,14 @@
       return (0, eval)(src)
     }
 
-    for (const name of Object.keys(files).sort()) {
-      if (name.includes("/") || !/\.pb\.(c)?js$/.test(name)) continue // modules load on require()
-      compile(name)(sandbox)
+    r.loading(true)
+    try {
+      for (const name of Object.keys(files).sort()) {
+        if (name.includes("/") || !/\.pb\.(c)?js$/.test(name)) continue // modules load on require()
+        compile(name)(sandbox)
+      }
+    } finally {
+      r.loading(false)
     }
     loading = false
 
