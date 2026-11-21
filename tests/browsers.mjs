@@ -335,6 +335,40 @@ try {
     return { out: $("req-out").textContent.split("\\n").slice(0, 2).join(" "), before, after, dry: state.rec.dry === true, state: snap.state }`)
   for (let i = 0; i < 30 && !/Finished/.test(r.state); i++) r = { ...r, state: (await key("F8")).state }
   check("dry run: rolled back, same as on the server", /rolled back/.test(r.out) && r.before === r.after && r.dry && /same as on the server/.test(r.state), r)
+
+  // 7. saved examples: save, kept after a reload, pick fills the form, import skips a path to another site, delete
+  await d.run(`
+    localStorage.removeItem("dbg2.examples")
+    const $ = (id) => document.getElementById(id)
+    $("req-method").value = "POST"; $("req-path").value = "/api/notes"; $("req-body").value = '{"text":""}'; $("req-dry").checked = true
+    $("ex-save").click(); $("ex-name").value = "empty text gives 400"; $("ex-name-ok").click(); return true`)
+  await d.goto(U + "/debug/")
+  r = await d.run(`
+    const $ = (id) => document.getElementById(id)
+    const waitFor = async (f, ms = 15000) => { const t = Date.now(); while (!f()) { if (Date.now() - t > ms) throw new Error("timeout: " + f); await new Promise((r) => setTimeout(r, 50)) } }
+    await waitFor(() => $("ex-list").options.length > 1)
+    $("req-body").value = ""
+    $("ex-list").value = "empty text gives 400"; $("ex-list").dispatchEvent(new Event("change"))
+    const picked = { method: $("req-method").value, path: $("req-path").value, body: $("req-body").value, dry: $("req-dry").checked }
+    const file = new File([JSON.stringify({ examples: [
+      { name: "hello", method: "get", path: "/api/hello/world" },
+      { name: "elsewhere", method: "GET", path: "//example.com/x" },
+      { name: "empty text gives 400", method: "POST", path: "/api/notes", body: { text: " " } },
+    ] })], "requests.json")
+    await importExamples(file)
+    const names = examples.map((x) => x.name)
+    const replaced = examples.find((x) => x.name === "empty text gives 400").body
+    $("req-path").value = "//example.com/x"; $("req-send").click()
+    await waitFor(() => $("req-out").textContent.length > 0)
+    const guard = $("req-out").textContent
+    $("ex-list").value = "hello"; $("ex-list").dispatchEvent(new Event("change")); $("ex-delete").click()
+    const after = JSON.parse(localStorage.getItem("dbg2.examples")).map((x) => x.name)
+    localStorage.removeItem("dbg2.examples")
+    return { picked, names, replaced, guard, after }`)
+  check("saved examples: save, reload, pick, import, delete",
+    r.picked.path === "/api/notes" && r.picked.body === '{"text":""}' && r.picked.dry &&
+    r.names.join() === "empty text gives 400,hello" && r.replaced === '{"text":" "}' &&
+    /Only paths on this server/.test(r.guard) && r.after.join() === "empty text gives 400", r)
 } catch (e) {
   check("no unexpected error", false, String(e))
 } finally {

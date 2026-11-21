@@ -103,6 +103,11 @@ sequenceDiagram
   recorded through Everyone are never dry). Not undone: anything outside the database (`$http` calls, emails,
   files). Built-in routes (`/api/collections/…`) and `async` handlers
   aren't supported yet: the page says so, and an `async` handler isn't run at all.
+- **Saved examples** of requests, above the request runner: **Save** the request (with a name, "as superuser" and
+  "dry run"), pick one to fill in the form. Kept in this browser only (localStorage, like breakpoints): nothing is
+  written to the server or the app folder. **Export** downloads them as `requests.json`, **Import** loads such a
+  file (same names are replaced), so you can share them or keep them in git yourself. Imported paths must be on
+  this server (`/…`).
 - **Step Back** (Shift+F6) and **Replay from the start** (Shift+F8).
 - **Recorded** tab: what Go answered during the run, highlighted up to the current step.
 - At the end: **Finished: same as on the server** and the response, or what differs (e.g. the file changed since the
@@ -175,7 +180,7 @@ Remove both again to turn the debugger off completely.
 | Node | 24.22.1, for `tests/engine.cjs` |
 
 In each browser: sign-in, recording (also a hook inside a hook), replay "same as on the server", breakpoints, all
-the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, a dry run, and the hook files named `pb_hooks/…` in the browser's
+the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, a dry run, saved examples (save, import, delete; not Export's download), and the hook files named `pb_hooks/…` in the browser's
 developer tools (`tests/browsers.mjs` in all three, plus a check by hand). On a Mac keyboard you may have to hold **fn** for the F keys.
 
 PocketOne is still in alpha: a newer release can change what hooks see, so the recorder and the replay may need

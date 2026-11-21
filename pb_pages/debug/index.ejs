@@ -128,9 +128,22 @@
         <section>
           <h2>Send a request</h2>
           <div class="runner">
+            <div class="row examples">
+              <select id="ex-list" title="Saved examples, kept in this browser (localStorage). Pick one to fill in the form."></select>
+              <button id="ex-save" title="Save the request below as an example, in this browser">Save</button>
+              <button id="ex-delete" title="Delete the selected example" disabled>Delete</button>
+              <button id="ex-export" title="Download all examples as requests.json">Export</button>
+              <button id="ex-import" title="Load examples from a .json file (examples with the same name are replaced)">Import</button>
+              <input type="file" id="ex-file" accept=".json,application/json" hidden />
+            </div>
+            <div class="row" id="ex-name-row" hidden>
+              <input id="ex-name" placeholder="A name, e.g. empty text gives 400" spellcheck="false" autocomplete="off" />
+              <button id="ex-name-ok" class="primary">Save</button>
+              <button id="ex-name-cancel">Cancel</button>
+            </div>
             <div class="row">
               <select id="req-method">
-                <option>GET</option><option selected>POST</option><option>PATCH</option><option>DELETE</option>
+                <option>GET</option><option selected>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
               </select>
               <input id="req-path" value="/api/notes" spellcheck="false" />
             </div>

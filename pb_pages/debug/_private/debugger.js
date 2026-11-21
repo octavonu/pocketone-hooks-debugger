@@ -697,6 +697,12 @@ async function sendRequest() {
   const body = $("req-body").value.trim()
   const out = $("req-out")
   out.innerHTML = '<span class="muted">sending…</span>'
+  // only this server: a path like //other.site would send the superuser token there
+  const url = new URL(path, location.origin)
+  if (url.origin !== location.origin) {
+    out.innerHTML = '<span class="e">Only paths on this server, like /api/notes.</span>'
+    return
+  }
   const headers = {}
   if (body && method !== "GET") headers["Content-Type"] = "application/json"
   if ($("req-auth").checked) headers.Authorization = DBG.token
@@ -706,7 +712,7 @@ async function sendRequest() {
   const before = state.latest
   const t0 = performance.now()
   try {
-    const res = await fetch(new URL(path, location.origin), { method, headers, body: method === "GET" || !body ? undefined : body })
+    const res = await fetch(url, { method, headers, body: method === "GET" || !body ? undefined : body })
     const text = await res.text()
     let pretty = text
     try {
@@ -732,6 +738,127 @@ async function sendRequest() {
   // replay what this request recorded: the newest recording (an outer handler finishes after the hooks inside it)
   if (state.latest !== before && state.recs[0]) await selectRec(state.recs[0].id)
   else toast("Nothing was recorded: no handler ran for this request.")
+}
+
+/* ------------------------------------------------------------------ */
+/* Saved examples: in this browser (localStorage), Export / Import     */
+/* ------------------------------------------------------------------ */
+
+const EX_KEY = "dbg2.examples"
+const EX_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+let examples = []
+try {
+  examples = (JSON.parse(localStorage.getItem(EX_KEY) || "[]") || []).map(cleanExample).filter(Boolean)
+} catch {}
+
+// A valid example, or null. Also checks imported files: a path must be on this server.
+function cleanExample(x) {
+  if (!x || typeof x !== "object") return null
+  const name = String(x.name ?? "").trim().slice(0, 120)
+  const method = String(x.method ?? "GET").toUpperCase()
+  const path = String(x.path ?? "")
+  if (!name || !EX_METHODS.includes(method) || !path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) return null
+  const body = x.body == null ? "" : typeof x.body === "string" ? x.body : JSON.stringify(x.body)
+  return { name, method, path, body, superuser: x.superuser === true, dry: x.dry !== false }
+}
+
+function saveExamples() {
+  try {
+    localStorage.setItem(EX_KEY, JSON.stringify(examples))
+  } catch {
+    toast("Couldn't save in this browser (localStorage is full or blocked).")
+  }
+}
+
+function renderExamples(selected = "") {
+  const sel = $("ex-list")
+  sel.innerHTML = ""
+  const first = new Option(examples.length ? `Examples (${examples.length})…` : "No examples yet", "")
+  sel.append(first)
+  for (const x of examples) sel.append(new Option(`${x.name}  ·  ${x.method} ${x.path}`, x.name))
+  sel.value = examples.some((x) => x.name === selected) ? selected : ""
+  $("ex-delete").disabled = !sel.value
+}
+
+function pickExample(name) {
+  const x = examples.find((x) => x.name === name)
+  $("ex-delete").disabled = !x
+  if (!x) return
+  $("req-method").value = x.method
+  $("req-path").value = x.path
+  $("req-body").value = x.body
+  $("req-auth").checked = x.superuser
+  $("req-dry").checked = x.dry
+}
+
+function showNameRow(show) {
+  $("ex-name-row").hidden = !show
+  if (!show) return
+  const input = $("ex-name")
+  input.value = $("ex-list").value || `${$("req-method").value} ${$("req-path").value.trim()}`
+  input.focus()
+  input.select()
+}
+
+function saveExample() {
+  const x = cleanExample({
+    name: $("ex-name").value, method: $("req-method").value, path: $("req-path").value.trim(),
+    body: $("req-body").value, superuser: $("req-auth").checked, dry: $("req-dry").checked,
+  })
+  if (!x) return toast("Give it a name, and a path that starts with /.")
+  const i = examples.findIndex((e) => e.name === x.name)
+  if (i >= 0) examples[i] = x
+  else examples.push(x)
+  saveExamples()
+  renderExamples(x.name)
+  showNameRow(false)
+  toast(`${i >= 0 ? "Updated" : "Saved"} "${x.name}" in this browser.`)
+}
+
+function deleteExample() {
+  const name = $("ex-list").value
+  if (!name) return
+  examples = examples.filter((x) => x.name !== name)
+  saveExamples()
+  renderExamples()
+  toast(`Deleted "${name}".`)
+}
+
+function exportExamples() {
+  if (!examples.length) return toast("No examples to export yet.")
+  const data = { debugger: "pocketone-hooks-debugger", version: 1, examples }
+  const a = document.createElement("a")
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + "\n"], { type: "application/json" }))
+  a.download = "requests.json"
+  document.body.append(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}
+
+async function importExamples(file) {
+  let list
+  try {
+    const data = JSON.parse(await file.text())
+    list = Array.isArray(data) ? data : data && data.examples
+    if (!Array.isArray(list)) throw new Error()
+  } catch {
+    return toast("That file isn't a list of examples (expected an Export from here).")
+  }
+  let added = 0, replaced = 0, skipped = 0
+  for (const raw of list) {
+    const x = cleanExample(raw)
+    if (!x) {
+      skipped++
+      continue
+    }
+    const i = examples.findIndex((e) => e.name === x.name)
+    if (i >= 0) (examples[i] = x), replaced++
+    else examples.push(x), added++
+  }
+  saveExamples()
+  renderExamples()
+  toast(`Imported: ${added} new, ${replaced} replaced${skipped ? `, ${skipped} skipped (not valid)` : ""}.`)
 }
 
 /* ------------------------------------------------------------------ */
@@ -942,6 +1069,23 @@ $("console-input").addEventListener("keydown", (e) => {
   }
 })
 $("req-send").addEventListener("click", sendRequest)
+renderExamples()
+$("ex-list").addEventListener("change", (e) => pickExample(e.target.value))
+$("ex-save").addEventListener("click", () => showNameRow($("ex-name-row").hidden))
+$("ex-name-ok").addEventListener("click", saveExample)
+$("ex-name-cancel").addEventListener("click", () => showNameRow(false))
+$("ex-name").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") saveExample()
+  else if (e.key === "Escape") showNameRow(false)
+})
+$("ex-delete").addEventListener("click", deleteExample)
+$("ex-export").addEventListener("click", exportExamples)
+$("ex-import").addEventListener("click", () => $("ex-file").click())
+$("ex-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0]
+  e.target.value = ""
+  if (file) await importExamples(file)
+})
 $("idle-wake").addEventListener("click", wake)
 document.addEventListener("keydown", (e) => {
   if (!state.trace || e.target.closest("input, textarea, select")) return

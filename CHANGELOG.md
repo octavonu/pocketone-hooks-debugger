@@ -7,9 +7,11 @@ Notable changes to the PocketOne Hooks Debugger. There are no version numbers ye
 ### Added
 
 - **Dry run**: a checkbox next to Send, on by default. The route's handler runs inside a database transaction that is always rolled back, so nothing is saved; you still get the response (with an `X-Dbg-Dry: rolled back` header) and the recording. Only for `routerAdd` handlers that aren't `async`; the page says when a request wasn't a dry run. `tests/browsers.mjs` checks it.
+- **Saved examples** of requests, above the request runner: Save, pick one to fill in the form, Delete, and **Export** / **Import** as `requests.json`. Kept in the browser (localStorage), never on the server. `tests/browsers.mjs` checks them.
 
 ### Fixed
 
+- The request runner sends only to this server: a path like `//other.site/x` used to send the request there, with the superuser token when "as superuser" was ticked.
 - A hook that runs inside a transaction (e.g. inside `$app.runInTransaction()`) now gets the transaction's `$app` while it's recorded, as without the debugger. Before, it got the app's normal `$app`, and a write through it would wait for the transaction's lock.
 
 ## 2026-11-20: first release
