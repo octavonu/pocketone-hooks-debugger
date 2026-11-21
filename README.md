@@ -10,7 +10,8 @@ recorded, and the browser replays them, so you can also step back.
 ## How it works
 
 1. **Record.** While a debugger tab is open, `pb_hooks/00_dbg.pb.js` records each run of a handler: every answer
-   it gets from Go (`e`, `$app`, `Record`, `$security`, …, `Date.now()`, `Math.random()`), in order.
+   it gets from Go (`e`, `$app`, `Record`, `$security`, …, `Date.now()`, `Math.random()`), in order. With **dry
+   run**, a route's handler runs inside a database transaction that is then rolled back, so nothing is saved.
 2. **Replay.** You pick a recording. The browser runs the same hook files against fakes that give back exactly
    those answers, so the handler takes the same path through the code. Nothing reaches the server, so no write
    happens twice.
@@ -30,6 +31,11 @@ recorded, and the browser replays them, so you can also step back.
   instance can hibernate.
 - **Recordings** list: every handler run while the tab is open (routes, `on*()` hooks, cron jobs), with its file and
   line. A hook that runs inside another handler (e.g. `onRecordCreate` inside `$app.save()`) gets its own recording.
+- **Dry run** (a checkbox next to Send, on by default): a `routerAdd` handler runs inside a database transaction
+  that is rolled back at the end, so a POST, PATCH or DELETE changes nothing. You still get the response and a
+  recording to step through. Sent as an `X-Dbg-Dry` header with the tab's token, so only you can ask for it. Not undone: anything
+  outside the database (`$http` calls, emails, files). Built-in routes (`/api/collections/…`) and `async` handlers
+  aren't supported yet: the page says so, and an `async` handler isn't run at all.
 - **Step Back** (Shift+F6) and **Replay from the start** (Shift+F8).
 - **Recorded** tab: what Go answered during the run, highlighted up to the current step.
 - At the end: **Finished: same as on the server** and the response, or what differs (e.g. the file changed since the
@@ -80,7 +86,7 @@ Remove both again to turn the debugger off completely.
 
 | Path | What |
 |---|---|
-| `pb_hooks/00_dbg.pb.js` | The recorder. Wraps `routerAdd`, `cronAdd` and every `on*()`. Records only while a debugger tab sends heartbeats; with **Only me**, only requests with the tab's `dbg` cookie or `X-Dbg` header, or from a superuser. Keeps the last 50 recordings in memory. Exposes them to the pages as `globalThis.__dbg` (pages run in the same JS VM). |
+| `pb_hooks/00_dbg.pb.js` | The recorder. Wraps `routerAdd`, `cronAdd` and every `on*()`. Records only while a debugger tab sends heartbeats; with **Only me**, only requests with the tab's `dbg` cookie or `X-Dbg` header, or from a superuser. Keeps the last 50 recordings in memory. Runs dry runs in a transaction that is rolled back. Exposes them to the pages as `globalThis.__dbg` (pages run in the same JS VM). |
 | `pb_pages/debug/+middleware.js` | Superusers only (the `dbg_auth` cookie or an `Authorization` header), no layouts, `no-store`. |
 | `pb_pages/debug/login/`, `logout/` | Sign in and out. |
 | `pb_pages/debug/index.ejs` | The page. |
@@ -102,7 +108,7 @@ Remove both again to turn the debugger off completely.
 | Node | 24.22.1, for `tests/engine.cjs` |
 
 In each browser: sign-in, recording (also a hook inside a hook), replay "same as on the server", breakpoints, all
-the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, and the hook files named `pb_hooks/…` in the browser's
+the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, a dry run, and the hook files named `pb_hooks/…` in the browser's
 developer tools (`tests/browsers.mjs` in all three, plus a check by hand). On a Mac keyboard you may have to hold **fn** for the F keys.
 
 PocketOne is still in alpha: a newer release can change what hooks see, so the recorder and the replay may need
@@ -121,6 +127,9 @@ updates.
 - **Not recorded yet:** middlewares (`routerUse` and a route's own middlewares), and `new Date()` without arguments.
 - **Async handlers:** other requests can run during an `await` and see the recorder's wrapped globals, so they may
   be recorded into the wrong run.
+- **Dry run** works only for `routerAdd` handlers that aren't `async`: after an `await`, PocketOne gives `$app` back
+  its real app, so the rest would write outside the transaction. A handler that isn't `async` but returns a promise
+  isn't detected: what it does after its first `await` is saved.
 - **Recordings live in memory**: a restart or a hooks reload (e.g. after you edit a hook file) clears them.
 - Arrow functions with an expression body (`(e) => e.json(...)`) have no line to stop on.
 - **Safari:** an error's stack trace (e.g. `new Error().stack` in Evaluate) has no file name for hook code, because

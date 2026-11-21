@@ -2,6 +2,16 @@
 
 Notable changes to the PocketOne Hooks Debugger. There are no version numbers yet, so entries are grouped by date.
 
+## 2026-11-21
+
+### Added
+
+- **Dry run**: a checkbox next to Send, on by default. The route's handler runs inside a database transaction that is always rolled back, so nothing is saved; you still get the response (with an `X-Dbg-Dry: rolled back` header) and the recording. Only for `routerAdd` handlers that aren't `async`; the page says when a request wasn't a dry run. `tests/browsers.mjs` checks it.
+
+### Fixed
+
+- A hook that runs inside a transaction (e.g. inside `$app.runInTransaction()`) now gets the transaction's `$app` while it's recorded, as without the debugger. Before, it got the app's normal `$app`, and a write through it would wait for the transaction's lock.
+
 ## 2026-11-20: first release
 
 The successor of [pb-hooks-debugger](https://github.com/octavonu/pb-hooks-debugger) (v1, for plain PocketBase, now archived; its history is there). It's for [PocketOne](https://github.com/pockethost/pocketone) only, and works differently: nothing is rewritten and nothing pauses on the server.

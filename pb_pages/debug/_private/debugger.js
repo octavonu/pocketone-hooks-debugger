@@ -471,7 +471,7 @@ function renderRecs() {
       const t = new Date(r.at)
       return `<li><button data-id="${r.id}" class="${state.rec && state.rec.id === r.id ? "active" : ""}" title="${esc(r.key)}${r.where ? " · " + esc(r.where.file) + ":" + r.where.line : ""}">
         <span class="rt"><span class="kind">${esc(r.kind)}</span><b>${esc(r.title)}</b>${r.path ? " " + esc(r.path) : ""}</span>
-        <span class="rs">#${r.id} · ${t.toLocaleTimeString()} · ${r.ms ?? "?"} ms · ${r.answers} answers${r.error ? ' · <span class="bad">error</span>' : ""}</span>
+        <span class="rs">#${r.id} · ${t.toLocaleTimeString()} · ${r.ms ?? "?"} ms · ${r.answers} answers${r.dry ? ' · <span class="dry">dry run</span>' : ""}${r.error ? ' · <span class="bad">error</span>' : ""}</span>
       </button></li>`
     })
     .join("")
@@ -700,6 +700,8 @@ async function sendRequest() {
   const headers = {}
   if (body && method !== "GET") headers["Content-Type"] = "application/json"
   if ($("req-auth").checked) headers.Authorization = DBG.token
+  const dry = $("req-dry").checked
+  if (dry) headers["X-Dbg-Dry"] = TOKEN
   setTokenCookie()
   const before = state.latest
   const t0 = performance.now()
@@ -711,6 +713,14 @@ async function sendRequest() {
       pretty = JSON.stringify(JSON.parse(text), null, 2)
     } catch {}
     out.innerHTML = `<div class="muted">${res.status} ${esc(res.statusText)} · ${Math.round(performance.now() - t0)} ms</div>`
+    const dryAnswer = res.headers.get("X-Dbg-Dry")
+    if (dryAnswer === "rolled back") {
+      out.insertAdjacentHTML("beforeend", `<div class="dry">Dry run: rolled back, nothing was saved.</div>`)
+    } else if (dryAnswer) {
+      out.insertAdjacentHTML("beforeend", `<div class="bad">Dry run ${esc(dryAnswer)}.</div>`)
+    } else if (dry && method !== "GET") {
+      out.insertAdjacentHTML("beforeend", `<div class="bad">Not a dry run: no routerAdd handler answered (a built-in route?), so its changes were saved.</div>`)
+    }
     const pre = document.createElement("pre")
     pre.textContent = pretty.length > 5000 ? pretty.slice(0, 5000) + "…" : pretty
     out.append(pre)

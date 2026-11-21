@@ -21,7 +21,7 @@ const DBG_SELF = ["00_dbg.pb.js"]
 const __dbgTabs = new Map() // tab id -> { token, all, seen }
 
 function __dbgLiveTabs() {
-  const now = Date.now()
+  const now = __dbgRealNow() // not Date.now: it may be wrapped by a recording in progress
   const live = []
   for (const [id, t] of __dbgTabs) {
     if (now - t.seen > DBG_TAB_TTL) __dbgTabs.delete(id)
@@ -53,6 +53,18 @@ function __dbgShouldRecord(e) {
     } catch (_) {}
   }
   return !!token && tabs.some((t) => t.token === token)
+}
+
+// Dry run: a route handler runs inside a database transaction that is always rolled back. Asked for with the
+// `X-Dbg-Dry` header; its value must be the token of an open debugger tab, so nobody else can ask for it.
+const DBG_ROLLBACK = "__dbg_dry_run_rollback__"
+
+function __dbgWantsDry(e) {
+  let token = ""
+  try {
+    token = e.request.header.get("X-Dbg-Dry")
+  } catch (_) {}
+  return !!token && __dbgLiveTabs().some((t) => t.token === token)
 }
 
 /* ------------------------------------------------------------------ */
@@ -160,6 +172,8 @@ const __dbgGlobals = Object.keys(globalThis)
   .concat(["Record", "Collection", "DynamicModel", "toString", "readerToString", "sleep", "arrayOf"])
   .filter((k) => globalThis[k] != null)
 const __dbgReal = Object.fromEntries(__dbgGlobals.map((k) => [k, globalThis[k]]))
+// proxy -> the real value, for every recorder (a nested recording must wrap the real $app, not a proxy)
+const __dbgRealOf = new WeakMap()
 const __dbgRealNow = Date.now
 const __dbgRealRandom = Math.random
 
@@ -218,10 +232,14 @@ function __dbgRecorder() {
     return answer(key, r)
   }
 
-  const wrap = (target, path) => {
+  // overrides: properties answered with another value (a dry run's e.app is the transaction's app)
+  const wrap = (target, path, overrides) => {
     let p
     p = new Proxy(target, {
       get(t, prop) {
+        if (overrides && typeof prop === "string" && Object.prototype.hasOwnProperty.call(overrides, prop)) {
+          return answer(`${path}.${prop}`, overrides[prop])
+        }
         // for…of: walk it by length and index, which are recorded
         if (prop === Symbol.iterator && t != null && "length" in t) {
           return function* () {
@@ -248,6 +266,7 @@ function __dbgRecorder() {
       },
     })
     targets.set(p, { target, path })
+    __dbgRealOf.set(p, target)
     return p
   }
   return { log, wrap, typeOf }
@@ -262,7 +281,10 @@ function __dbgRun(info, handler, args) {
   const outer = Object.fromEntries(__dbgGlobals.map((k) => [k, globalThis[k]]))
   const outerNow = Date.now
   const outerRandom = Math.random
-  for (const k of __dbgGlobals) globalThis[k] = r.wrap(__dbgReal[k], k)
+  // PocketOne sets $app to the event's app before each handler (the transaction's app inside a transaction):
+  // wrap that one, not the $app from when this file loaded, or a hook inside a transaction would wait for it forever.
+  const appNow = __dbgRealOf.get(globalThis.$app) || globalThis.$app || __dbgReal.$app
+  for (const k of __dbgGlobals) globalThis[k] = r.wrap(k === "$app" ? appNow : __dbgReal[k], k)
   Date.now = r.wrap(__dbgRealNow, "Date.now")
   Math.random = r.wrap(__dbgRealRandom, "Math.random")
   __dbgDepth++
@@ -279,9 +301,17 @@ function __dbgRun(info, handler, args) {
     __dbgRecs.unshift(rec)
     if (__dbgRecs.length > DBG_MAX) __dbgRecs.pop()
   }
+  const wrapArgs = (overrides) =>
+    args.map((a, i) => (a != null && typeof a === "object" ? r.wrap(a, i === 0 ? "e" : "arg" + i, i === 0 ? overrides : undefined) : a))
+
+  if (info.kind === "route" && __dbgDepth === 1 && __dbgWantsDry(args[0])) {
+    rec.dry = true
+    return __dbgRunDry(handler, args[0], appNow, r, wrapArgs, done)
+  }
+
   let out
   try {
-    out = handler(...args.map((a, i) => (a != null && typeof a === "object" ? r.wrap(a, i === 0 ? "e" : "arg" + i) : a)))
+    out = handler(...wrapArgs())
   } catch (err) {
     done(err)
     throw err
@@ -294,6 +324,52 @@ function __dbgRun(info, handler, args) {
     )
   }
   done()
+  return out
+}
+
+// A dry run: the handler gets the transaction's app as $app and e.app, then the transaction is rolled back. The
+// response is still sent (it's written as the handler runs), with an `X-Dbg-Dry: rolled back` header.
+// Sync handlers only (see below). Not undone: $http calls, emails, files, anything outside the database.
+function __dbgRunDry(handler, e, appNow, r, wrapArgs, done) {
+  const isRollback = (err) => String(err).indexOf(DBG_ROLLBACK) !== -1
+  let out, failed = false, error
+  const inTx = (txApp) => {
+    globalThis.$app = r.wrap(txApp, "$app")
+    return wrapArgs({ app: txApp })
+  }
+
+  if (handler.constructor && handler.constructor.name === "AsyncFunction") {
+    // Not run at all: after an await, PocketOne gives $app back its real app, so the rest of the handler would write
+    // outside the transaction (and wait forever for its lock).
+    const err = new Error("dry run: not supported for async handlers yet, so the handler was not run")
+    try {
+      e.response.header().set("X-Dbg-Dry", "refused: async handler, not run")
+    } catch (_) {}
+    done(err)
+    throw err
+  }
+
+  try {
+    e.response.header().set("X-Dbg-Dry", "rolled back")
+  } catch (_) {}
+  try {
+    appNow.runInTransaction((txApp) => {
+      try {
+        out = handler(...inTx(txApp))
+      } catch (err) {
+        failed = true
+        error = err
+      }
+      throw new Error(DBG_ROLLBACK)
+    })
+  } catch (err) {
+    if (!isRollback(err)) {
+      done(err)
+      throw err
+    }
+  }
+  done(failed ? error : undefined)
+  if (failed) throw error
   return out
 }
 
@@ -364,14 +440,14 @@ globalThis.__dbg = {
   // A debugger tab's heartbeat. Returns the newest recording id, so the tab knows when to reload the list.
   presence(tab, token, all, bye) {
     if (bye) __dbgTabs.delete(tab)
-    else if (tab) __dbgTabs.set(String(tab), { token: String(token || ""), all: !!all, seen: Date.now() })
+    else if (tab) __dbgTabs.set(String(tab), { token: String(token || ""), all: !!all, seen: __dbgRealNow() })
     return { latest: __dbgRecs.length ? __dbgRecs[0].id : 0, tabs: __dbgLiveTabs().length }
   },
 
   list() {
     return __dbgRecs.map((r) => ({
       id: r.id, kind: r.kind, title: r.title, path: r.path, key: r.key, n: r.n, where: r.where,
-      at: r.at, ms: r.ms, error: r.error, answers: r.log.length,
+      at: r.at, ms: r.ms, error: r.error, dry: r.dry, answers: r.log.length,
     }))
   },
 

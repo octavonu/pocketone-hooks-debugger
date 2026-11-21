@@ -137,6 +137,7 @@
             <textarea id="req-body" spellcheck="false">{"text":"hello from the debugger"}</textarea>
             <div class="row">
               <label title="Checked: sends your superuser token (Authorization header), so API rules are skipped and e.auth is your superuser in hooks.&#10;Unchecked: sent as a guest with no auth, so API rules apply and e.auth is null, like a normal visitor.&#10;With Record for: Only me, both are recorded: as a guest through the dbg cookie, as superuser through the token."><input type="checkbox" id="req-auth" /> as superuser</label>
+              <label title="Checked: a routerAdd handler runs inside a database transaction that is rolled back at the end, so nothing it writes is kept. You still get its response and its recording.&#10;Not rolled back: built-in routes (/api/collections/...), $http calls, emails, files."><input type="checkbox" id="req-dry" checked autocomplete="off" /> dry run</label>
               <span class="spacer"></span>
               <button id="req-send">Send</button>
             </div>

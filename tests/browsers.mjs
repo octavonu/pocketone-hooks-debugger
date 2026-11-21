@@ -317,6 +317,24 @@ try {
     for (let i = 0; i < 30 && !/Finished/.test(r.state); i++) r = await key("F8")
     check(`replay ${what} -> same as on the server`, /same as on the server/.test(r.state), r.state)
   }
+
+  // 6. dry run: the note is rolled back (same number of notes), and its recording replays the same
+  r = await d.run(`
+    const $ = (id) => document.getElementById(id)
+    const waitFor = async (f, ms = 15000) => { const t = Date.now(); while (!f()) { if (Date.now() - t > ms) throw new Error("timeout: " + f); await new Promise((r) => setTimeout(r, 50)) } }
+    const count = async () => (await (await fetch("/api/collections/notes/records?perPage=1", { headers: { Authorization: DBG.token } })).json()).totalItems
+    const before = await count()
+    $("req-dry").checked = true
+    $("req-method").value = "POST"; $("req-path").value = "/api/notes"; $("req-body").value = '{"text":"dry run note"}'
+    $("req-send").click()
+    await waitFor(() => /^\\d{3} /.test($("req-out").textContent))
+    $("req-dry").checked = false
+    await waitFor(() => state.rec && /dry run note/i.test(JSON.stringify(state.rec.log)))
+    ${SNAP}
+    const after = await count()
+    return { out: $("req-out").textContent.split("\\n").slice(0, 2).join(" "), before, after, dry: state.rec.dry === true, state: snap.state }`)
+  for (let i = 0; i < 30 && !/Finished/.test(r.state); i++) r = { ...r, state: (await key("F8")).state }
+  check("dry run: rolled back, same as on the server", /rolled back/.test(r.out) && r.before === r.after && r.dry && /same as on the server/.test(r.state), r)
 } catch (e) {
   check("no unexpected error", false, String(e))
 } finally {

@@ -263,6 +263,8 @@ body.resizing iframe, body.resizing .code { pointer-events: none; }
 .runner textarea { font-family: var(--mono); font-size: 12.5px; min-height: 52px; resize: vertical; }
 .runner label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: .85rem; }
 .runner .out pre { font: 12px/1.45 var(--mono); }
+.runner .out .dry { color: var(--ok); font-size: .85rem; }
+.runner .out .bad { color: var(--bp); font-size: .85rem; }
 
 .toast {
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);
@@ -284,6 +286,7 @@ body.resizing iframe, body.resizing .code { pointer-events: none; }
 .recs .rt b { font-weight: 600; }
 .recs .rs { font-size: .74rem; color: var(--muted); }
 .recs .rs .bad { color: var(--bp); }
+.recs .rs .dry { color: var(--ok); }
 .kind { font: 600 .62rem system-ui, sans-serif; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 4px; }
 .status .step { color: var(--muted); font-weight: 400; font-size: .85rem; }
 .state.done { color: var(--ok); }
