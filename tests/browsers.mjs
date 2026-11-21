@@ -368,7 +368,19 @@ try {
   check("saved examples: save, reload, pick, import, delete",
     r.picked.path === "/api/notes" && r.picked.body === '{"text":""}' && r.picked.dry &&
     r.names.join() === "empty text gives 400,hello" && r.replaced === '{"text":" "}' &&
-    /Only paths on this server/.test(r.guard) && r.after.join() === "empty text gives 400", r)
+    /Only this server/.test(r.guard) && r.after.join() === "empty text gives 400", r)
+
+  // 8. the path checker: only paths on this server
+  r = await d.run(`
+    const ok = ["/api/notes", "/api/hello/w%C3%B6rld?x=1#top", location.origin + "/api/notes"]
+    const bad = ["www.google.de/api/notes", "api/notes", "//example.com/x", "https://example.com/api/notes",
+      "/\\\\example.com/x", "/\\t/example.com/x", "/api/no tes", "javascript:alert(1)", "data:text/plain,x",
+      "http://127.0.0.1:1/x", "", " "]
+    return {
+      ok: ok.map((p) => [p, checkPath(p).path || checkPath(p).error]),
+      wrong: bad.filter((p) => !checkPath(p).error),
+    }`)
+  check("path checker: only paths on this server", r.ok.every(([, v]) => v.startsWith("/api/")) && !r.wrong.length, r)
 } catch (e) {
   check("no unexpected error", false, String(e))
 } finally {

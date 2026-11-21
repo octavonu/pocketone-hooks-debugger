@@ -691,6 +691,36 @@ async function evaluate(expr) {
 /* Request runner (as v1)                                              */
 /* ------------------------------------------------------------------ */
 
+// The request runner only sends to this server. Returns { path } (path, query and hash on this server) or
+// { error }. Accepts "/api/notes?x=1", or a full address on this server (made a path). Rejects everything else:
+// other sites ("https://…", "//site/…"), a missing "/" ("www.site.de/…"), backslashes (browsers read "\\" as "/"),
+// and spaces or control characters (the URL parser drops tabs and newlines, so "/<tab>/site" would be "//site").
+function checkPath(input) {
+  const raw = String(input ?? "").trim()
+  const bad = (why) => ({ error: `${why} Use a path on this server, like /api/notes.` })
+  if (!raw) return bad("No path.")
+  if (/[\u0000-\u0020\u007f-\u00a0\u2028\u2029\\]/.test(raw)) return bad("Spaces, control characters and backslashes aren't allowed.")
+  let url
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+    try {
+      url = new URL(raw)
+    } catch {
+      return bad("Not a valid address.")
+    }
+    if (url.origin !== location.origin) return bad("Only this server, not other sites.")
+  } else {
+    if (!raw.startsWith("/")) return bad("A path starts with /.")
+    if (raw.startsWith("//")) return bad("Only this server, not other sites.")
+    try {
+      url = new URL(raw, location.origin)
+    } catch {
+      return bad("Not a valid path.")
+    }
+    if (url.origin !== location.origin) return bad("Only this server, not other sites.")
+  }
+  return { path: url.pathname + url.search + url.hash }
+}
+
 async function sendRequest() {
   const method = $("req-method").value
   const path = $("req-path").value.trim()
@@ -698,11 +728,12 @@ async function sendRequest() {
   const out = $("req-out")
   out.innerHTML = '<span class="muted">sending…</span>'
   // only this server: a path like //other.site would send the superuser token there
-  const url = new URL(path, location.origin)
-  if (url.origin !== location.origin) {
-    out.innerHTML = '<span class="e">Only paths on this server, like /api/notes.</span>'
+  const checked = checkPath(path)
+  if (checked.error) {
+    out.innerHTML = `<span class="e">${esc(checked.error)}</span>`
     return
   }
+  const url = new URL(checked.path, location.origin)
   const headers = {}
   if (body && method !== "GET") headers["Content-Type"] = "application/json"
   if ($("req-auth").checked) headers.Authorization = DBG.token
@@ -724,8 +755,10 @@ async function sendRequest() {
       out.insertAdjacentHTML("beforeend", `<div class="dry">Dry run: rolled back, nothing was saved.</div>`)
     } else if (dryAnswer) {
       out.insertAdjacentHTML("beforeend", `<div class="bad">Dry run ${esc(dryAnswer)}.</div>`)
-    } else if (dry && method !== "GET") {
+    } else if (dry && method !== "GET" && res.ok) {
       out.insertAdjacentHTML("beforeend", `<div class="bad">Not a dry run: no routerAdd handler answered (a built-in route?), so its changes were saved.</div>`)
+    } else if (dry && method !== "GET") {
+      out.insertAdjacentHTML("beforeend", `<div class="muted">Not a dry run: no routerAdd handler answered${res.status === 404 ? " (no route has this path)" : ""}.</div>`)
     }
     const pre = document.createElement("pre")
     pre.textContent = pretty.length > 5000 ? pretty.slice(0, 5000) + "…" : pretty
@@ -756,8 +789,8 @@ function cleanExample(x) {
   if (!x || typeof x !== "object") return null
   const name = String(x.name ?? "").trim().slice(0, 120)
   const method = String(x.method ?? "GET").toUpperCase()
-  const path = String(x.path ?? "")
-  if (!name || !EX_METHODS.includes(method) || !path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) return null
+  const { path } = checkPath(x.path)
+  if (!name || !EX_METHODS.includes(method) || !path) return null
   const body = x.body == null ? "" : typeof x.body === "string" ? x.body : JSON.stringify(x.body)
   return { name, method, path, body, superuser: x.superuser === true, dry: x.dry !== false }
 }

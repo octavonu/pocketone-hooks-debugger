@@ -106,8 +106,11 @@ sequenceDiagram
 - **Saved examples** of requests, above the request runner: **Save** the request (with a name, "as superuser" and
   "dry run"), pick one to fill in the form. Kept in this browser only (localStorage, like breakpoints): nothing is
   written to the server or the app folder. **Export** downloads them as `requests.json`, **Import** loads such a
-  file (same names are replaced), so you can share them or keep them in git yourself. Imported paths must be on
-  this server (`/…`).
+  file (same names are replaced), so you can share them or keep them in git yourself.
+- **Only this server.** The request runner sends only to paths on this server (`/api/notes`, or a full address on
+  this server). It refuses other sites (`https://…`, `//site/…`), a path without `/` (`www.site.de/…`),
+  backslashes, spaces and control characters, so an imported file can't send your requests (or your superuser
+  token) somewhere else. Imported examples with such a path are skipped.
 - **Step Back** (Shift+F6) and **Replay from the start** (Shift+F8).
 - **Recorded** tab: what Go answered during the run, highlighted up to the current step.
 - At the end: **Finished: same as on the server** and the response, or what differs (e.g. the file changed since the
