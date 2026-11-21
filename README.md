@@ -25,16 +25,21 @@ recorded, and the browser replays them, so you can also step back.
 - A file tree with subfolders, editor tabs with syntax highlighting, breakpoints on line numbers, a call stack (click
   a frame to see its variables), the Variables tree (`record`, `auth` and `request` first, secret headers masked),
   Evaluate in the selected frame, and a request runner.
-- **Record for: Only me / Everyone.** Only me records only your own requests: from the debugger's browser (a `dbg`
-  cookie), with its `X-Dbg` header (for curl or an app on another origin), or from a superuser.
+- **Record for: Only me / Everyone** (top right). **Only me**, the default, records only your own requests: from the
+  debugger's browser (a `dbg` cookie), with its `X-Dbg` header (the copy button next to it; for curl or an app on
+  another origin), or from a superuser. **Everyone** records every handler run on the server. You need it for runs
+  that can't carry your cookie or header: requests from other people or services (a mobile app, a webhook), and
+  handlers without a request (`cronAdd` jobs, hooks not started by a request), unless they run inside a recorded
+  request. On a server with real users, Everyone records their requests and data, so switch back when you're done.
 - Idle mode: after 2 minutes without input the tab stops its heartbeats, so nothing is recorded and a hosted
   instance can hibernate.
 - **Recordings** list: every handler run while the tab is open (routes, `on*()` hooks, cron jobs), with its file and
   line. A hook that runs inside another handler (e.g. `onRecordCreate` inside `$app.save()`) gets its own recording.
 - **Dry run** (a checkbox next to Send, on by default): a `routerAdd` handler runs inside a database transaction
   that is rolled back at the end, so a POST, PATCH or DELETE changes nothing. You still get the response and a
-  recording to step through. Sent as an `X-Dbg-Dry` header with the tab's token, so only you can ask for it. Not undone: anything
-  outside the database (`$http` calls, emails, files). Built-in routes (`/api/collections/…`) and `async` handlers
+  recording to step through. Sent as an `X-Dbg-Dry` header with the tab's token, so only you can ask for it (runs
+  recorded through Everyone are never dry). Not undone: anything outside the database (`$http` calls, emails,
+  files). Built-in routes (`/api/collections/…`) and `async` handlers
   aren't supported yet: the page says so, and an `async` handler isn't run at all.
 - **Step Back** (Shift+F6) and **Replay from the start** (Shift+F8).
 - **Recorded** tab: what Go answered during the run, highlighted up to the current step.
@@ -86,7 +91,7 @@ Remove both again to turn the debugger off completely.
 
 | Path | What |
 |---|---|
-| `pb_hooks/00_dbg.pb.js` | The recorder. Wraps `routerAdd`, `cronAdd` and every `on*()`. Records only while a debugger tab sends heartbeats; with **Only me**, only requests with the tab's `dbg` cookie or `X-Dbg` header, or from a superuser. Keeps the last 50 recordings in memory. Runs dry runs in a transaction that is rolled back. Exposes them to the pages as `globalThis.__dbg` (pages run in the same JS VM). |
+| `pb_hooks/00_dbg.pb.js` | The recorder. Wraps `routerAdd`, `cronAdd` and every `on*()`. Records only while a debugger tab sends heartbeats; with **Only me**, only requests with the tab's `dbg` cookie or `X-Dbg` header, or from a superuser. Keeps the last 50 recordings in memory and exposes them to the pages as `globalThis.__dbg` (pages run in the same JS VM). Runs a dry run in a transaction that is rolled back. |
 | `pb_pages/debug/+middleware.js` | Superusers only (the `dbg_auth` cookie or an `Authorization` header), no layouts, `no-store`. |
 | `pb_pages/debug/login/`, `logout/` | Sign in and out. |
 | `pb_pages/debug/index.ejs` | The page. |
@@ -148,7 +153,8 @@ the page: someone who isn't signed in gets only the sign-in form. You can check:
 `$` globals) and writes down every answer they give, including request headers, cookies, bodies and records. It:
 
 - records only while a superuser's debugger tab is open (it sends a heartbeat; recording stops 90 s after the last
-  one). With **Only me**, only that tab's requests and superusers' requests are recorded.
+  one). With **Only me**, only that tab's requests and superusers' requests are recorded. With **Everyone**, every
+  handler run is recorded, other people's requests too.
 - keeps the last 50 recordings in memory only: nothing is written to disk or to the database, and a restart clears
   them.
 - never sends anything anywhere: it doesn't use `$http`, `$os` or files. The recordings are in
