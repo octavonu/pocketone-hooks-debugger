@@ -86,6 +86,48 @@ function __dbgMask(name, value) {
     : value
 }
 
+// Secrets never go into a recording: private keys in PEM, and the values of environment variables whose names say
+// they are secret (…KEY, …SECRET, …TOKEN, …PASSWORD, e.g. AS2_MASTER_KEY). Applied to a whole recording before the
+// page can see it. The replay then gets the mask instead of the value (a handler that uses a secret replays
+// differently from the server: that is the price).
+const DBG_SECRET_ENV = /(KEY|SECRET|TOKEN|PASSWORD|PASSWD)/i
+const DBG_PEM_PRIVATE = /-----BEGIN ([A-Z0-9 ]*)PRIVATE KEY-----[\s\S]*?-----END \1PRIVATE KEY-----/g
+
+function __dbgSecretValues() {
+  const out = []
+  try {
+    const env = typeof process !== "undefined" && process.env ? process.env : {}
+    for (const name of Object.keys(env)) {
+      const v = String(env[name] || "")
+      if (DBG_SECRET_ENV.test(name) && v.length >= 12) out.push([name, v])
+    }
+  } catch (_) {}
+  return out
+}
+
+function __dbgScrubString(str, secrets) {
+  if (typeof str !== "string" || str.length < 12) return str
+  let s = str.replace(DBG_PEM_PRIVATE, "‹private key masked›")
+  for (const [name, v] of secrets) {
+    // as it is, and as it looks inside JSON (an argument key is JSON)
+    for (const form of [v, JSON.stringify(v).slice(1, -1)]) if (s.indexOf(form) !== -1) s = s.split(form).join(`‹${name} masked›`)
+  }
+  return s
+}
+
+// In place, through plain objects and arrays (a recording holds only those: Go values are snapshots already).
+function __dbgScrub(value, secrets, seen = new Set()) {
+  if (typeof value === "string") return __dbgScrubString(value, secrets)
+  if (value === null || typeof value !== "object" || seen.has(value)) return value
+  seen.add(value)
+  for (const k of Object.keys(value)) {
+    try {
+      value[k] = __dbgScrub(value[k], secrets, seen)
+    } catch (_) {}
+  }
+  return value
+}
+
 function __dbgPlain(value, depth, seen) {
   if (value === null || value === undefined) return value === null ? null : "‹undefined›"
   const type = typeof value
@@ -391,6 +433,7 @@ function __dbgRun(info, handler, args) {
     Math.random = outerRandom
     if (err) rec.error = String(err)
     rec.ms = __dbgRealNow() - Date.parse(rec.at)
+    __dbgScrub(rec, __dbgSecretValues())
     __dbgRecs.unshift(rec)
     if (__dbgRecs.length > DBG_MAX) __dbgRecs.pop()
   }

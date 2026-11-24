@@ -2,6 +2,12 @@
 
 Notable changes to the PocketOne Hooks Debugger. There are no version numbers yet, so entries are grouped by date.
 
+## 2026-11-24
+
+### Added
+
+- **Secrets are masked in recordings.** Before a recording is shown, private keys in PEM and the values of secret-looking environment variables (names with `KEY`, `SECRET`, `TOKEN` or `PASSWORD`, e.g. a master key for encrypted fields) are replaced with `‹private key masked›` / `‹NAME masked›`, everywhere in it: answers, call arguments (such as a `$wasm` call's input), the event's snapshot, errors. Found while building sealed AS2 keys in an app: the recorder wrote the master key and the private key into recordings. The replay gets the mask instead of the value (see Security in the README). Tested on PocketOne locally (8 recordings, "Everyone") and on a PocketHost instance (signing with a sealed key, a refused key): no key material and no master key left, the masks there.
+
 ## 2026-11-21
 
 ### Added

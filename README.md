@@ -247,6 +247,13 @@ the page: someone who isn't signed in gets only the sign-in form. You can check:
   runs in the same JS VM, so it could read them too, like anything else there.)
 - masks the `Authorization`, `Cookie` and `Set-Cookie` headers in the views. They stay in the recording, because the
   replay needs the same values.
+- **masks secrets in the whole recording** before a page can see it: private keys in PEM (`-----BEGIN … PRIVATE
+  KEY-----`) become `‹private key masked›`, and the values of environment variables whose names say they are secret
+  (`…KEY`, `…SECRET`, `…TOKEN`, `…PASSWORD`, e.g. a master key your hooks read with `process.env`) become
+  `‹NAME masked›`, wherever they appear: in answers, in the arguments of a call (e.g. the input of a `$wasm` call),
+  in the event's snapshot. To know what to mask, it reads `process.env` when a recording ends. The replay then gets
+  the mask instead of the value, so a handler that uses a secret can replay differently from the server from that
+  step on.
 
 **Suggest examples** is the only part that sends anything out, and only when you click **Ask**: it sends the
 route's hook file and the hook files it requires (no recordings, no data) to the language model your app is set up
