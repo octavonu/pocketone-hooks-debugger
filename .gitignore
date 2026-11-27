@@ -7,6 +7,8 @@ node_modules/
 /pocketone_*.zip
 /pocketone
 /pocketone.exe
+/pocketone.old
+/pocketone-*
 /CHANGELOG.pocketbase.md
 /LICENSE.md
 

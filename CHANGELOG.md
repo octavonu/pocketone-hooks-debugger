@@ -2,6 +2,16 @@
 
 Notable changes to the PocketOne Hooks Debugger. There are no version numbers yet, so entries are grouped by date.
 
+## 2026-11-27
+
+### Changed
+
+- **Needs PocketOne 0.0.1-alpha.13 or newer.** Its PocketPages 0.2.0 no longer runs `+page.js` and `+api.js` (it logs "unknown framework file" and ignores them, so sign-in did nothing and the API answered 404). The route files have the new names: `login/+page.js` → `login/index.ts`, `logout/+api.js` → `logout.ts`, `api/<name>/+api.js` → `api/<name>.ts` (files, presence, recordings, suggest). The code inside is unchanged, and so are the URLs. Tested on alpha.13: `tests/browsers.mjs` 18/18 in Chrome, `tests/engine.cjs` all recordings "same as on the server", and on a PocketHost instance (alpha.13) the sign-in works again.
+
+### Known
+
+- **Suggest examples** says "This PocketOne has no $agent" on alpha.13: the `agent` extension was replaced by `llm` / `llm-chat`, and `api/suggest.ts` still asks `$agent`. Not changed yet.
+
 ## 2026-11-24
 
 ### Added

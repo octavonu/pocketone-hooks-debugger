@@ -128,13 +128,15 @@ sequenceDiagram
 
 ## Quick start
 
-1. Download PocketOne from its [releases](https://github.com/pocketonehq/pocketone/releases): the zip for your
-   system, e.g. `pocketone_0.0.1-alpha.9_darwin_arm64.zip` (Mac with Apple silicon), `…_darwin_amd64.zip` (Intel Mac),
+1. Download PocketOne **0.0.1-alpha.13 or newer** (its Pages 0.2.0 runs the debugger's `.ts` route files; older
+   releases need the `+page.js` / `+api.js` names, see the changelog) from its
+   [releases](https://github.com/pocketonehq/pocketone/releases): the zip for your system, e.g.
+   `pocketone_0.0.1-alpha.13_darwin_arm64.zip` (Mac with Apple silicon), `…_darwin_amd64.zip` (Intel Mac),
    `…_linux_amd64.zip` or `…_windows_amd64.zip`. Put it in this folder.
 2. Unzip **only the binary**. The zip also has a `CHANGELOG.md`, which would overwrite this project's:
 
    ```sh
-   unzip pocketone_0.0.1-alpha.9_darwin_amd64.zip pocketone      # pocketone.exe on Windows
+   unzip pocketone_0.0.1-alpha.13_darwin_amd64.zip pocketone     # pocketone.exe on Windows
    ```
 
    The binary, the zip and its other files are in `.gitignore`. On macOS, if you downloaded the zip with a browser
@@ -171,10 +173,10 @@ Remove both again to turn the debugger off completely.
 |---|---|
 | `pb_hooks/00_dbg.pb.js` | The recorder. Wraps `routerAdd`, `cronAdd` and every `on*()`. Records only while a debugger tab sends heartbeats; with **Only me**, only requests with the tab's `dbg` cookie or `X-Dbg` header, or from a superuser. Keeps the last 50 recordings in memory and exposes them to the pages as `globalThis.__dbg` (pages run in the same JS VM). Runs a dry run in a transaction that is rolled back. |
 | `pb_pages/debug/+middleware.js` | Superusers only (the `dbg_auth` cookie or an `Authorization` header), no layouts, `no-store`. |
-| `pb_pages/debug/login/`, `logout/` | Sign in and out. |
+| `pb_pages/debug/login/index.ts`, `logout.ts` | Sign in and out (`login/index.ejs` is the form). |
 | `pb_pages/debug/index.ejs` | The page. |
-| `pb_pages/debug/api/files`, `recordings`, `presence` | JSON for the page: the hook files with their sources, the recordings, the heartbeat. |
-| `pb_pages/debug/api/suggest` | Suggest examples: the routes, the model's status, and the question to `$agent` (in the background). |
+| `pb_pages/debug/api/files.ts`, `recordings.ts`, `presence.ts` | JSON for the page: the hook files with their sources, the recordings, the heartbeat. |
+| `pb_pages/debug/api/suggest.ts` | Suggest examples: the routes, the model's status, and the question to `$agent` (in the background). |
 | `pb_pages/debug/_private/replay.js` | The replay engine: the fakes, the instrumentation (acorn), the tracer, and the inspector for variables and Evaluate. |
 | `pb_pages/debug/_private/debugger.js`, `debugger.css` | The UI. `index.ejs` writes these three files into the page, so only a signed-in superuser gets them (`_private/` is never served). |
 | `pb_pages/debug/_private/acorn.js`, `acorn.LICENSE` | [acorn](https://github.com/acornjs/acorn) 8.19.0, the JavaScript parser the replay and the syntax highlighting use: `dist/acorn.js` from the npm package, unchanged, and its MIT license. Included so there's nothing to install and the debugger works offline. |
@@ -186,7 +188,7 @@ Remove both again to turn the debugger off completely.
 
 | | Version |
 |---|---|
-| PocketOne | **0.0.1-alpha.9** (PocketBase 0.42.3), the release binary for macOS (darwin/amd64) |
+| PocketOne | **0.0.1-alpha.13** (PocketBase 0.42.3), the release binary for macOS (darwin/amd64): `tests/browsers.mjs` 18/18 in Chrome 158, `tests/engine.cjs` all recordings "same as on the server" (2026-11-27). Before: 0.0.1-alpha.9 |
 | Browsers | **Google Chrome 157** (157.0.8103.79, V8), **Firefox 145.0** (SpiderMonkey), **Safari 26.6.2** (JavaScriptCore), on macOS. The replay runs in the browser's JS engine, not in PocketOne's QuickJS |
 | acorn | 8.19.0, included |
 | Node | 24.22.1, for `tests/engine.cjs` |
