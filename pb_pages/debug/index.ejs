@@ -137,11 +137,12 @@
               <input type="file" id="ex-file" accept=".json,application/json" hidden />
             </div>
             <div class="row">
-              <button id="sg-open" title="Ask the app's language model ($agent) for example requests for a route. You pick which ones to save.">Suggest examples…</button>
+              <button id="sg-open" title="Ask one of the app's language models (Settings → LLM) for example requests for a route. You pick which ones to save.">Suggest examples…</button>
             </div>
             <div class="suggest" id="sg" hidden>
               <div class="row">
                 <select id="sg-route" title="The route to suggest examples for"></select>
+                <select id="sg-model" title="The model to ask (the text models of the providers in Settings → LLM)"></select>
                 <button id="sg-ask" class="primary">Ask</button>
                 <button id="sg-close">Close</button>
               </div>

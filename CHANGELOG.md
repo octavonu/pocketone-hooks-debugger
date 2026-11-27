@@ -8,9 +8,7 @@ Notable changes to the PocketOne Hooks Debugger. There are no version numbers ye
 
 - **Needs PocketOne 0.0.1-alpha.13 or newer.** Its PocketPages 0.2.0 no longer runs `+page.js` and `+api.js` (it logs "unknown framework file" and ignores them, so sign-in did nothing and the API answered 404). The route files have the new names: `login/+page.js` → `login/index.ts`, `logout/+api.js` → `logout.ts`, `api/<name>/+api.js` → `api/<name>.ts` (files, presence, recordings, suggest). The code inside is unchanged, and so are the URLs. Tested on alpha.13: `tests/browsers.mjs` 18/18 in Chrome, `tests/engine.cjs` all recordings "same as on the server", and on a PocketHost instance (alpha.13) the sign-in works again.
 
-### Known
-
-- **Suggest examples** says "This PocketOne has no $agent" on alpha.13: the `agent` extension was replaced by `llm` / `llm-chat`, and `api/suggest.ts` still asks `$agent`. Not changed yet.
+- **Suggest examples uses `$llm`** (the llm extension) instead of `$agent`, which alpha.13 no longer has (it said "This PocketOne has no $agent"). `$llm` has no default model, so the panel has a model list: the text models of the providers in Settings → LLM, those that promise JSON in a schema first; the page remembers your pick. The server takes only a model from that list. The call counts for the signed-in superuser (`$llm.for(ctx)`), so the limits in Settings → LLM apply, and it gives up after 2 minutes. Tested on alpha.13 without a provider (the panel says to add one, Ask is off; a model not in the list is refused); not yet with a real model.
 
 ## 2026-11-24
 

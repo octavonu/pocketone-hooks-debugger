@@ -399,7 +399,7 @@ try {
     $("sg-save").click()
     const saved = examples.map((x) => ({ name: x.name, path: x.path, dry: x.dry }))
     localStorage.removeItem("dbg2.examples")
-    return { ready: true, model: suggest.status.model, route, items, html, saved }`)
+    return { ready: true, model: $("sg-model").value, route, items, html, saved }`)
   if (!r.ready) {
     check("suggest examples: no model -> says so, Ask disabled", /No language model/.test(r.info) && r.ask && /POST \/api\/notes/.test(r.route), r)
   } else {

@@ -895,10 +895,11 @@ async function importExamples(file) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Suggest examples: the app's language model ($agent) writes them     */
+/* Suggest examples: one of the app's language models ($llm) writes them */
 /* ------------------------------------------------------------------ */
 
 const suggest = { routes: [], status: null, items: [], timer: null }
+const MODEL_KEY = "dbg2.suggestModel" // the model picked last, in this browser
 
 async function openSuggest() {
   $("sg").hidden = false
@@ -925,6 +926,14 @@ async function openSuggest() {
     return new RegExp(re).test(path)
   })
   if (match >= 0) sel.value = String(match)
+  const models = $("sg-model")
+  models.innerHTML = ""
+  for (const m of (r.status && r.status.models) || []) {
+    models.append(new Option(m.name + (m.json ? "" : "  (no JSON schema)"), m.name))
+  }
+  models.hidden = !models.options.length
+  const last = localStorage.getItem(MODEL_KEY)
+  if (last && [...models.options].some((o) => o.value === last)) models.value = last
   if (!r.routes.length) {
     $("sg-info").textContent = "No routerAdd routes in your hooks."
     return
@@ -940,8 +949,8 @@ function showSuggestInfo() {
     $("sg-info").textContent = `No language model: ${(s && s.message) || "not ready"}`
     return
   }
-  $("sg-ask").disabled = !route
-  const who = [s.model, s.backend && `(${s.backend})`].filter(Boolean).join(" ") || "the app's model"
+  const who = $("sg-model").value
+  $("sg-ask").disabled = !route || !who
   $("sg-info").textContent = route
     ? `Ask sends pb_hooks/${route.file} and the hook files it requires to ${who}. You pick which suggestions to save.`
     : ""
@@ -955,7 +964,9 @@ async function askSuggest() {
   $("sg-info").textContent = "Asking… (a few seconds, up to a minute)"
   let job
   try {
-    job = await api("/debug/api/suggest", { method: "POST", body: { route: Number($("sg-route").value) } })
+    const model = $("sg-model").value
+    localStorage.setItem(MODEL_KEY, model)
+    job = await api("/debug/api/suggest", { method: "POST", body: { route: Number($("sg-route").value), model } })
   } catch (err) {
     $("sg-info").textContent = err.message
     $("sg-ask").disabled = false
@@ -1279,6 +1290,7 @@ $("ex-name").addEventListener("keydown", (e) => {
 $("ex-delete").addEventListener("click", deleteExample)
 $("sg-open").addEventListener("click", () => ($("sg").hidden ? openSuggest() : closeSuggest()))
 $("sg-route").addEventListener("change", showSuggestInfo)
+$("sg-model").addEventListener("change", showSuggestInfo)
 $("sg-ask").addEventListener("click", askSuggest)
 $("sg-close").addEventListener("click", closeSuggest)
 $("sg-save").addEventListener("click", saveSuggestions)

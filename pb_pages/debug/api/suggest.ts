@@ -1,12 +1,14 @@
-// /debug/api/suggest: example requests for a route, written by the app's language model ($agent).
+// /debug/api/suggest: example requests for a route, written by a language model of the app ($llm, the llm
+// extension: the providers and keys are in Settings → LLM).
 //
-// GET                  the model's status and the routes (from the recorder).
-// POST { route: i }    sends the route's hook file (and the files it requires) to the model, in the background:
-//                      an answer can take longer than a request may run (30 s). Returns { job }.
-// GET ?job=id          { done, examples, error }.
+// GET                         the text models (status.models, "provider/model") and the routes (from the recorder).
+// POST { route: i, model }    sends the route's hook file (and the files it requires) to that model, in the
+//                             background, so the page can show the time while it waits. Returns { job }.
+// GET ?job=id                 { done, examples, error }.
 //
 // The model's answer is untrusted: the page checks every example (paths on this server only) and saves only the
-// ones you pick. Nothing is saved here, and nothing is sent anywhere but to the model the app is set up with.
+// ones you pick. Nothing is saved here, and nothing is sent anywhere but to the model you pick, through the providers
+// the app is set up with. Each call counts for the signed-in superuser ($llm.for(ctx)), so Settings → LLM limits apply.
 const SEGMENT = /^[\w\-][\w.\-]*$/
 const MAX_SOURCE = 24000 // characters of code sent, in all
 const HOW_MANY = 6
@@ -33,13 +35,26 @@ const SCHEMA = {
   required: ["examples"],
 }
 
-function modelStatus() {
-  if (typeof $agent === "undefined") return { ready: false, message: "This PocketOne has no $agent." }
+// "provider/model" for a call; a listed id may or may not start with its provider already
+function modelName(m) {
+  return m.provider && !String(m.id).startsWith(m.provider + "/") ? m.provider + "/" + m.id : String(m.id)
+}
+
+// The text models of the providers in Settings → LLM, those that promise "structured output" (JSON in a schema)
+// first. { ready, models: [{ name, title }], message }
+async function modelStatus() {
+  if (typeof $llm === "undefined") return { ready: false, models: [], message: "This PocketOne has no $llm (the llm extension)." }
   try {
-    const s = $agent.status()
-    return { ready: !!s.ready, backend: s.backend || "", model: s.model || "", message: s.message || "" }
+    const list = (await $llm.text.modelsAsync({ signal: AbortSignal.timeout(15000) })).models || []
+    const json = (m) => (m.features || []).includes("structured output")
+    const models = list
+      .filter((m) => !m.kinds || m.kinds.includes("text"))
+      .sort((a, b) => json(b) - json(a))
+      .map((m) => ({ name: modelName(m), title: m.name || "", json: json(m) }))
+    if (!models.length) return { ready: false, models, message: "add a provider with text models in Settings → LLM." }
+    return { ready: true, models, message: "" }
   } catch (err) {
-    return { ready: false, message: String(err) }
+    return { ready: false, models: [], message: String((err && err.message) || err) }
   }
 }
 
@@ -108,15 +123,16 @@ module.exports = {
       if (!job) return ctx.res.json(404, { message: "No such question (a restart clears them)." })
       return ctx.res.json({ done: job.done, examples: job.examples, error: job.error, model: job.model })
     }
-    return ctx.res.json({ status: modelStatus(), routes: __dbg.routes() })
+    return modelStatus().then((status) => ctx.res.json({ status, routes: __dbg.routes() }))
   },
 
-  post(ctx) {
-    const { route: i } = ctx.req.body()
+  async post(ctx) {
+    const { route: i, model } = ctx.req.body()
     const route = __dbg.routes()[Number(i)]
     if (!route || !route.file) return ctx.res.json(400, { message: "No such route." })
-    const status = modelStatus()
-    if (!status.ready) return ctx.res.json(503, { message: "The language model isn't ready: " + status.message })
+    const status = await modelStatus()
+    if (!status.ready) return ctx.res.json(503, { message: "No language model: " + status.message })
+    if (!status.models.some((m) => m.name === model)) return ctx.res.json(400, { message: "Pick one of the app's text models." })
 
     const root = hooksRoot(ctx)
     const main = readHook(root, route.file)
@@ -132,10 +148,12 @@ module.exports = {
     for (const [k, j] of jobs) if (now - j.at > 10 * 60 * 1000) jobs.delete(k)
 
     const id = $security.randomString(16)
-    const job = { at: now, done: false, examples: null, error: null, model: status.model || status.backend }
+    const job = { at: now, done: false, examples: null, error: null, model }
     jobs.set(id, job)
-    $agent.complete
-      .async({
+    $llm
+      .for(ctx)
+      .text.completeAsync({
+        model,
         system:
           "You help a developer debug the JavaScript route handlers of a PocketBase / PocketOne app (pb_hooks). " +
           "You suggest example HTTP requests that make a handler take each of its paths. Answer only with the JSON asked for.",
@@ -143,7 +161,7 @@ module.exports = {
         schema: SCHEMA,
         maxTokens: 1500,
         temperature: 0.3,
-        wait: "60s",
+        signal: AbortSignal.timeout(120000),
       })
       .then(
         (answer) => {
