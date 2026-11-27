@@ -96,6 +96,48 @@ endpoint, and its `__dbg.page(...)` starts the recording. Then your middleware, 
 the same `ctx` object to each step, so the recorder swaps its parts in place and puts them back at the end. The
 replay runs the same files in the same order: your middleware, `load`, then the method's handler.
 
+### Where things are
+
+**The recordings are on the server, in memory.** `pb_hooks/00_dbg.pb.js` keeps the last 50 in PocketOne's JS VM
+(`globalThis.__dbg`). They're never written to disk or to the database, and a restart or a hooks reload clears them.
+The page loads one when you click it in the list, from `/debug/api/recordings?id=N`. Open that address in the same
+browser (signed in) to see a recording's raw JSON.
+
+**A recording holds only what Go answered**, in order: each call as text (`k`) and its answer (`v`), e.g.
+`{ "k": "ctx.app.countRecords(\"notes\")", "v": 23 }`. For a Go object, there's a snapshot to show instead of a
+value.
+
+**The replay gives those answers back, in the browser.** In `replay.js`, `replayer(log)` puts the answers into one
+queue per call. `e`, `ctx.app`, `$app` and the other Go values become fakes (JavaScript Proxies, `fake()`). When
+your code calls `ctx.app.countRecords("notes")`, the fake builds that same key, and `take(key)` gives back the next
+answer from its queue: `23`. **The backend isn't called**: stepping, Step Back, Variables and Evaluate never send
+a request, so a `POST` that saves a record can be stepped through a hundred times without saving twice. The page
+talks to the server only for **Send** (a real request, which is recorded), the heartbeat every 5 s, loading the
+files and recordings, and **Ask** in Suggest examples. If the code asks for something the recording doesn't have
+(e.g. the file changed since), the replay stops with "not in the recording: …" and says it differs from the server.
+
+**Variables aren't stored anywhere.** Your local variables (`name`, `count`, …) exist only while your code runs.
+To show them at step N, the browser replays from the start up to step N (a few milliseconds) and reads them there,
+in the paused function. Evaluate runs your expression there too, and Step Back is "replay up to step N−1". Only the
+snapshots of Go objects (a record, `e`, `ctx.req`) come from the recording.
+
+**Look inside yourself.** On `/debug/`, pick a recording, open the browser's console (Cmd+Option+J in Chrome,
+Cmd+Option+K in Firefox) and type `state.rec` (the whole recording), `state.rec.log` (the answers), or
+`console.table(state.rec.log)`. The **Recorded** tab shows the same list, highlighted up to the current step.
+
+**What the browser keeps** between visits (localStorage, only in that browser):
+
+| Key | What |
+|---|---|
+| `dbg2.breakpoints` | Your breakpoints (file and line) |
+| `dbg2.examples` | Saved examples for the request runner |
+| `dbg2.suggestModel` | The model you picked last in Suggest examples |
+| `dbg.layout` | The panel sizes |
+| `dbg.pauseFor` | Record for: Only me or Everyone |
+
+And two cookies: `dbg_auth` (your sign-in for `/debug`, HttpOnly, 7 days) and `dbg` (the tab's token, so the
+recorder knows a request is yours with **Only me**).
+
 ## Features
 
 ![Paused at a breakpoint in POST /api/notes after a dry run, with the variables, the recordings list, saved examples and the Suggest examples panel](docs/screenshot.jpg)
