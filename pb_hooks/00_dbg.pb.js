@@ -408,7 +408,9 @@ function __dbgRecorder() {
 }
 
 // Runs handler(...args), recording it if a debugger wants it.
-function __dbgRun(info, handler, args) {
+// setup(r), if given, runs once the globals are wrapped and returns a function that undoes what it did (pages use it
+// to wrap ctx's parts in place).
+function __dbgRun(info, handler, args, setup) {
   if (!__dbgShouldRecord(args[0])) return handler(...args)
   const r = __dbgRecorder()
   const rec = { id: ++__dbgSeq, ...info, at: new Date().toISOString(), log: r.log }
@@ -423,11 +425,13 @@ function __dbgRun(info, handler, args) {
   Date.now = r.wrap(__dbgRealNow, "Date.now")
   Math.random = r.wrap(__dbgRealRandom, "Math.random")
   __dbgDepth++
+  let undo = null
   let finished = false
   const done = (err) => {
     if (finished) return
     finished = true
     __dbgDepth--
+    if (undo) undo()
     for (const k of __dbgGlobals) globalThis[k] = outer[k]
     Date.now = outerNow
     Math.random = outerRandom
@@ -447,6 +451,7 @@ function __dbgRun(info, handler, args) {
 
   let out
   try {
+    if (setup) undo = setup(r)
     out = handler(...wrapArgs())
   } catch (err) {
     done(err)
@@ -567,6 +572,72 @@ for (const name of Object.keys(globalThis).filter((k) => /^on[A-Z]/.test(k) && t
 }
 
 /* ------------------------------------------------------------------ */
+/* pb_pages: the root +middleware wrapped with __dbg.page()            */
+/* ------------------------------------------------------------------ */
+
+// A page or endpoint run: the root +middleware (mw) and those below it, `load`, the method's handler, the template. Pages
+// gives the same plain `ctx` object to each step and keeps its own reference to it, so a Proxy of ctx would never
+// reach the handler: its parts are swapped in place for recording wrappers, and put back when the run ends.
+// Not wrapped: ctx.data (the page's own), ctx.include and ctx.resolve (they load pb_pages files).
+const DBG_PAGE_SKIP = ["data", "include", "resolve"]
+
+function __dbgPage(mw, ctx, next) {
+  const file = String((ctx.route && ctx.route.file) || "")
+  if (file.startsWith("debug/")) return mw(ctx, next) // the debugger's own pages
+  const ev = ctx.req && ctx.req.event
+  const key = `page(${JSON.stringify(file)})`
+  // page: what the replay needs to build its own ctx (filled in by setup, only when the run is recorded)
+  const page = { file: "pb_pages/" + file, method: String(ctx.req.method || "GET"), keys: [], types: {}, views: {}, plain: {}, data: {} }
+  const info = { kind: "page", key, n: 0, where: { file: page.file, line: 1 }, title: `${ctx.req.method} ${ctx.route.path}`, path: String((ctx.req.url && ctx.req.url.pathname) || ""), page }
+  const setup = (r) => {
+    const saved = {}
+    for (const k of Object.keys(ctx)) {
+      const v = ctx[k]
+      if (DBG_PAGE_SKIP.indexOf(k) !== -1) continue
+      // primitives (ctx.dev, ctx.pagesDir): given to the replay as they are
+      if (v === null || (typeof v !== "object" && typeof v !== "function")) {
+        page.plain[k] = v === undefined ? null : v
+        continue
+      }
+      page.keys.push(k)
+      page.types[k] = r.typeOf(v)
+      if (k !== "app" && typeof v === "object") page.views[k] = __dbgView(v)
+      saved[k] = v
+      ctx[k] = r.wrap(v, "ctx." + k)
+    }
+    page.data = __dbgView(ctx.data || {})
+    // Where the template starts: every compiled template begins with `var ctx = __pp.ctx, data = ctx.data, params =
+    // ctx.params, meta = ctx.meta`, and runs under Pages' render(). So ctx.meta becomes a getter that, the first
+    // time it's read from there, puts a marker in the log. The replay runs the .ts code up to it; what comes after
+    // it is the template's (and its layouts').
+    const hadMeta = Object.prototype.hasOwnProperty.call(ctx, "meta")
+    if (hadMeta) {
+      let meta = ctx.meta
+      let marked = false
+      Object.defineProperty(ctx, "meta", {
+        configurable: true,
+        enumerable: true,
+        get() {
+          if (!marked && /\bat render \(ext\/pages\/driver\.js/.test(String(new Error().stack))) {
+            marked = true
+            r.log.push({ k: "‹template›", template: true })
+          }
+          return meta
+        },
+        set(v) {
+          meta = v
+        },
+      })
+    }
+    return () => {
+      if (hadMeta) delete ctx.meta
+      Object.assign(ctx, saved)
+    }
+  }
+  return __dbgRun(info, () => mw(ctx, next), [ev], setup)
+}
+
+/* ------------------------------------------------------------------ */
 /* What pb_pages/debug/ uses                                           */
 /* ------------------------------------------------------------------ */
 
@@ -601,4 +672,7 @@ globalThis.__dbg = {
   clear() {
     __dbgRecs.length = 0
   },
+
+  // pb_pages/+middleware.ts: export default __dbg.page(middleware): the root middleware, recorded with the page
+  page: (mw) => (ctx, next) => __dbgPage(mw, ctx, next),
 }

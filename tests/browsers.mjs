@@ -336,6 +336,43 @@ try {
   for (let i = 0; i < 30 && !/Finished/.test(r.state); i++) r = { ...r, state: (await key("F8")).state }
   check("dry run: rolled back, same as on the server", /rolled back/.test(r.out) && r.before === r.after && r.dry && /same as on the server/.test(r.state), r)
 
+  // 6b. pb_pages: a page endpoint (ES module syntax, load + get, a _private module, a +middleware.ts)
+  await d.run(`localStorage.setItem("dbg2.breakpoints", JSON.stringify([{ file: "pb_pages/demo/summary.ts", line: 10 }])); return true`)
+  await d.goto(U + "/debug/")
+  r = await d.run(`
+    const $ = (id) => document.getElementById(id)
+    const wait = async (f, ms = 15000) => { const t = Date.now(); while (!f()) { if (Date.now() - t > ms) throw new Error("timeout: " + f); await new Promise((r) => setTimeout(r, 50)) } }
+    await wait(() => state.files && state.files.length)
+    await new Promise((r) => setTimeout(r, 1200))
+    $("req-method").value = "GET"; $("req-path").value = "/demo/summary?t=page%20test"; $("req-body").value = ""; $("req-dry").checked = false
+    $("req-send").click()
+    await wait(() => /^\\d{3} /.test($("req-out").textContent))
+    await wait(() => [...document.querySelectorAll("#recs li")].some((li) => li.textContent.includes("/demo/summary")))
+    const li = [...document.querySelectorAll("#recs li")].find((li) => li.textContent.includes("/demo/summary"))
+    li.querySelector("button").click()
+    await wait(() => state.rec && state.rec.kind === "page")
+    ${SNAP}; snap.listed = state.files.some((f) => f.name === "pb_pages/demo/summary.ts"); snap.locked = !!(state.files.find((f) => f.name === "pb_pages/+middleware.ts") || {}).readonly; snap.first = state.trace.steps[0].file; document.activeElement && document.activeElement.blur(); return snap`)
+  check("pb_pages: +middleware.ts locked, replay starts in _private/middleware.ts, stops at summary.ts:10", r.listed && r.locked && r.first === "pb_pages/_private/middleware.ts" && r.file === "pb_pages/demo/summary.ts" && r.line === 10 && /breakpoint/.test(r.state), r)
+  r = await key("F5")
+  check("pb_pages: F5 Step Into -> _private/fmt.js", r.file === "pb_pages/demo/_private/fmt.js" && r.depth === 2, r)
+  for (let i = 0; i < 30 && !/Finished/.test(r.state); i++) r = await key("F8")
+  check("pb_pages: F8 -> same as on the server", /same as on the server/.test(r.state), r.state)
+
+  // a page with a template: test.ts (load) is replayed, the template's answers are reported, not counted as differences
+  r = await d.run(`
+    const $ = (id) => document.getElementById(id)
+    const wait = async (f, ms = 15000) => { const t = Date.now(); while (!f()) { if (Date.now() - t > ms) throw new Error("timeout: " + f); await new Promise((r) => setTimeout(r, 50)) } }
+    $("req-method").value = "GET"; $("req-path").value = "/test/test?name=Ana"; $("req-body").value = ""
+    $("req-out").textContent = ""; $("req-send").click()
+    await wait(() => /^\\d{3} /.test($("req-out").textContent))
+    await wait(() => [...document.querySelectorAll("#recs li")].some((li) => li.textContent.includes("/test/test")))
+    ;[...document.querySelectorAll("#recs li")].find((li) => li.textContent.includes("/test/test")).querySelector("button").click()
+    await wait(() => state.rec && state.rec.path === "/test/test")
+    ${SNAP}; document.activeElement && document.activeElement.blur(); return snap`)
+  for (let i = 0; i < 30 && !/Finished/.test(r.state); i++) r = await key("F8")
+  r.result = await d.run(`return document.getElementById("result").textContent`)
+  check("pb_pages: page with a template -> same as on the server, template reported", /same as on the server/.test(r.state) && /Template: test\/test\.ejs/.test(r.result), { state: r.state, result: r.result })
+
   // 7. saved examples: save, kept after a reload, pick fills the form, import skips a path to another site, delete
   await d.run(`
     localStorage.removeItem("dbg2.examples")

@@ -4,6 +4,16 @@ Notable changes to the PocketOne Hooks Debugger. There are no version numbers ye
 
 ## 2026-11-27
 
+### Added
+
+- **Debugging pages (`pb_pages`)**: breakpoints, stepping, Variables and Evaluate in the `.ts` code of pages and endpoints, the `+middleware` files and the modules in `_private/` folders, like in hooks. A new `pb_pages/+middleware.ts` hands each page run to the recorder (`__dbg.page(middleware)`); the app's own global middleware moves to `pb_pages/_private/middleware.ts`, and is recorded and replayed with the page. Pages gives the same `ctx` to every step, so the recorder swaps `ctx.req`, `ctx.res`, `ctx.app`, … for recording Proxies in place and puts them back at the end. The replay builds a fake `ctx`, runs the middlewares (root first), then `load` and the method's handler, finds modules in `_private/` folders like Pages, and reads `import` / `export` (as CommonJS, on the same lines). For a page with a template, the recorder marks where the template starts (the first read of `ctx.meta` from Pages' `render()`): the code before it is replayed, and the template's answers are reported, not counted as differences. Templates aren't replayed yet, and `.ts` files with type annotations can't be. New demo pages in `pb_pages/demo/` and `pb_pages/test/`. `tests/browsers.mjs` has 4 new checks (Chrome and Firefox 22/22, Safari 21/21 + 1 known), and `tests/engine.cjs` replays page recordings too ("same as on the server").
+- **The file tree shows `pb_hooks` and `pb_pages` side by side**, like on disk, and the debugger's own page `pb_pages/debug/` as a locked folder (closed at first; `acorn.js` is listed as a short note instead of its 246 KB). A folder whose files are all read-only gets a lock.
+- **A GIF in the README** (`docs/demo.gif`): a breakpoint in a hook and in a page.
+
+### Fixed
+
+- A module loaded with `require` now resolves paths from its own folder. Inside the replay's `with` sandbox, the sandbox's `require` (which resolved from `pb_hooks/`) won over the module's own, so a relative `require` in `lib/…` could load the wrong file.
+
 ### Changed
 
 - **Needs PocketOne 0.0.1-alpha.13 or newer.** Its PocketPages 0.2.0 no longer runs `+page.js` and `+api.js` (it logs "unknown framework file" and ignores them, so sign-in did nothing and the API answered 404). The route files have the new names: `login/+page.js` → `login/index.ts`, `logout/+api.js` → `logout.ts`, `api/<name>/+api.js` → `api/<name>.ts` (files, presence, recordings, suggest). The code inside is unchanged, and so are the URLs. Tested on alpha.13: `tests/browsers.mjs` 18/18 in Chrome, `tests/engine.cjs` all recordings "same as on the server", and on a PocketHost instance (alpha.13) the sign-in works again.

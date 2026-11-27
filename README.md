@@ -1,20 +1,22 @@
 # PocketOne Hooks Debugger
 
-A breakpoint debugger for the JS hooks (`pb_hooks`) of a [PocketOne](https://github.com/pocketonehq/pocketone) app.
-A file tree, tabs, breakpoints on line numbers, a call stack, Variables / Breakpoints / Evaluate and a request
-runner, like a debugger in an IDE. But **nothing is rewritten and nothing pauses on the server**: requests are
-recorded, and the browser replays them, so you can also step back.
+A breakpoint debugger for the JS hooks (`pb_hooks`) and the page code (`pb_pages`, the `.ts` files) of a
+[PocketOne](https://github.com/pocketonehq/pocketone) app. A file tree, tabs, breakpoints on line numbers, a call
+stack, Variables / Breakpoints / Evaluate and a request runner, like a debugger in an IDE. But **nothing is
+rewritten and nothing pauses on the server**: requests are recorded, and the browser replays them, so you can also
+step back.
 
-![Paused at a breakpoint in POST /api/notes after a dry run, with the variables, the recordings list, saved examples and the Suggest examples panel](docs/screenshot.jpg)
+![A breakpoint in a hook (main.pb.js), Step Into lib/greet.js, then a breakpoint in a page (pb_pages/demo/summary.ts), Step Into its _private/fmt.js module, and Continue: same as on the server](docs/demo.gif)
 
 ## How it works
 
 1. **Record.** While a debugger tab is open, `pb_hooks/00_dbg.pb.js` records each run of a handler: every answer
-   it gets from Go (`e`, `$app`, `Record`, `$security`, …, `Date.now()`, `Math.random()`), in order. With **dry
-   run**, a route's handler runs inside a database transaction that is then rolled back, so nothing is saved.
-2. **Replay.** You pick a recording. The browser runs the same hook files against fakes that give back exactly
-   those answers, so the handler takes the same path through the code. Nothing reaches the server, so no write
-   happens twice.
+   it gets from Go (`e`, `$app`, `Record`, `$security`, …, `Date.now()`, `Math.random()`), in order. Page runs
+   come in through `pb_pages/+middleware.ts`, and for them it records what `ctx` answers (`ctx.req`, `ctx.res`,
+   `ctx.app`, …) the same way. With **dry run**, a route's handler runs inside a database transaction that is then
+   rolled back, so nothing is saved.
+2. **Replay.** You pick a recording. The browser runs the same hook or page files against fakes that give back
+   exactly those answers, so the code takes the same path. Nothing reaches the server, so no write happens twice.
 3. **Step.** The replay is instrumented in the browser, in memory, and gives its trace: every line it ran, with the
    call stack. Continue and Step Into / Over / Out move through the trace, and so does **Step Back**. To show the
    variables at a step, or evaluate an expression there, the replay runs again up to that step. That takes a few
@@ -22,19 +24,21 @@ recorded, and the browser replays them, so you can also step back.
 
 ### The parts
 
-The server records, the browser replays. They share nothing but the hook files and the recordings.
+The server records, the browser replays. They share nothing but your code files and the recordings.
 
 ```mermaid
 flowchart LR
   subgraph B["Your browser: the debugger page /debug/"]
     UI["debugger.js<br/>files, breakpoints, step keys,<br/>Variables, Evaluate"]
     RUN["Request runner<br/>(Send, dry run)"]
-    RP["replay.js + acorn<br/>runs your hook files again,<br/>against fakes"]
+    RP["replay.js + acorn<br/>runs your hook and page files<br/>again, against fakes"]
   end
 
   subgraph S["PocketOne server: one JS VM"]
     REC["00_dbg.pb.js<br/>the recorder"]
+    MW["pb_pages/+middleware.ts<br/>hands each page run<br/>to the recorder"]
     H["Your hooks<br/>pb_hooks/*.pb.js"]
+    P["Your pages<br/>pb_pages/**/*.ts"]
     MEM[("Recordings<br/>in memory, last 50")]
     API["pb_pages/debug/api/<br/>files, recordings, presence, suggest"]
   end
@@ -42,12 +46,16 @@ flowchart LR
   DB[("Database")]
 
   UI -- "heartbeat every 5 s<br/>(I'm here, my token)" --> API
-  RUN -- "1. a normal HTTP request<br/>+ dbg cookie / X-Dbg-Dry" --> REC
-  REC -- "2. runs your handler,<br/>logs every answer from Go" --> H
+  RUN -- "1a. a request to a hook route<br/>+ dbg cookie / X-Dbg-Dry" --> REC
+  RUN -- "1b. a request to a page" --> MW
+  MW --> REC
+  REC -- "2. runs your code,<br/>logs every answer from Go" --> H
+  REC -- "2." --> P
   H -- "reads and writes<br/>(rolled back in a dry run)" --> DB
+  P -- "reads and writes" --> DB
   REC -- "3. saves the log" --> MEM
   API -- "reads" --> MEM
-  UI -- "4. gets the hook files<br/>and the recording" --> API
+  UI -- "4. gets the hook and page files<br/>and the recording" --> API
   UI -- "5. replay, step, look" --> RP
 ```
 
@@ -82,11 +90,26 @@ sequenceDiagram
   P->>P: Variables, Evaluate: replay again up to that step
 ```
 
+A page works the same way, with `ctx` instead of `e`: `pb_pages/+middleware.ts` runs first for every page and
+endpoint, and its `__dbg.page(...)` starts the recording. Then your middleware, the page's `load` and its `get` /
+`post` / … run, with `ctx.req`, `ctx.res`, `ctx.app` and the other parts of `ctx` wrapped in Proxies. Pages gives
+the same `ctx` object to each step, so the recorder swaps its parts in place and puts them back at the end. The
+replay runs the same files in the same order: your middleware, `load`, then the method's handler.
+
 ## Features
 
-- A file tree with subfolders, editor tabs with syntax highlighting, breakpoints on line numbers, a call stack (click
-  a frame to see its variables), the Variables tree (`record`, `auth` and `request` first, secret headers masked),
-  Evaluate in the selected frame, and a request runner.
+![Paused at a breakpoint in POST /api/notes after a dry run, with the variables, the recordings list, saved examples and the Suggest examples panel](docs/screenshot.jpg)
+
+- A file tree with `pb_hooks` and `pb_pages` side by side, editor tabs with syntax highlighting, breakpoints on line
+  numbers, a call stack (click a frame to see its variables), the Variables tree (`record`, `auth` and `request`
+  first, secret headers masked), Evaluate in the selected frame, and a request runner. The debugger's own files
+  (`00_dbg.pb.js`, `pb_pages/+middleware.ts`, `pb_pages/debug/`) are shown with a lock: you can read them, but they
+  have no breakpoints.
+- **Pages (`pb_pages`)**: the `.ts` code of pages and endpoints, the `+middleware` files and the modules in
+  `_private/` folders. Breakpoints, stepping (also into a `_private/` module), Variables and Evaluate work as for
+  hooks. `import` / `export` are fine (plain JavaScript, no type annotations yet). For a page with a template, the
+  code before the template is replayed; the template isn't yet: the result says how many answers it read on the
+  server, and they don't count as differences.
 - **Record for: Only me / Everyone** (top right). **Only me**, the default, records only your own requests: from the
   debugger's browser (a `dbg` cookie), with its `X-Dbg` header (the copy button next to it; for curl or an app on
   another origin), or from a superuser. **Everyone** records every handler run on the server. You need it for runs
@@ -152,13 +175,17 @@ sequenceDiagram
 4. Open http://127.0.0.1:8094/debug/ and sign in with the superuser.
 5. Open `main.pb.js` and click line 17. In **Send a request**, press **Send**. The request is recorded, and the
    replay stops at the line. F8 Continue · F5 Into · F6 Over · F7 Out · Shift+F6 Back · Shift+F8 Replay.
+6. A page: open `pb_pages/demo/summary.ts`, click line 10, and send `GET /demo/summary?t=my%20notes`. F5 steps into
+   `pb_pages/demo/_private/fmt.js`.
 
 The demo app has `GET /api/hello/{name}` (with a helper in `lib/greet.js`), `POST /api/notes` (writes a record), and
-`GET /api/notes/summary`, plus an `onRecordCreate` hook for `notes`.
+`GET /api/notes/summary`, plus an `onRecordCreate` hook for `notes`. Its pages: the endpoints `/demo/notes?q=milk`
+and `/demo/summary?t=…` (`import`/`export`, `load` + `get`, a `_private/` module), the page `/test/test?name=Ana`
+(`test.ts` with `load`, and the template `test.ejs`), and a global middleware in `pb_pages/_private/middleware.ts`.
 
 ### Adding it to an existing PocketOne app
 
-You only need:
+For hooks you only need:
 
 - `pb_hooks/00_dbg.pb.js`: the recorder. It must load before your other hook files (they load in name order), since
   it wraps the functions they register their handlers with.
@@ -166,37 +193,52 @@ You only need:
   `pb_pages` (no `+config.js`, auth plugin or layout changes): it signs superusers in with its own cookie
   (`dbg_auth`, HttpOnly, path `/debug`).
 
-Remove both again to turn the debugger off completely.
+For pages, also `pb_pages/+middleware.ts`. It runs first for every page and hands each run to the recorder. A
+folder can have only one `+middleware`, so if your app already has a root `+middleware.js` / `.ts`, move its code
+to `pb_pages/_private/middleware.ts` (a default export, `(ctx, next) => …`): the debugger's `+middleware.ts` runs it,
+and it's recorded and replayed with the page. With no middleware of your own, that file is just
+`export default (ctx, next) => next()`. Without the debugger, `+middleware.ts` just runs your middleware:
+
+```ts
+import middleware from "./_private/middleware"
+
+export default typeof __dbg === "object" ? __dbg.page(middleware) : middleware
+```
+
+Remove these again to turn the debugger off completely (and put your middleware back as `pb_pages/+middleware.ts`).
 
 ## Files
 
 | Path | What |
 |---|---|
 | `pb_hooks/00_dbg.pb.js` | The recorder. Wraps `routerAdd`, `cronAdd` and every `on*()`. Records only while a debugger tab sends heartbeats; with **Only me**, only requests with the tab's `dbg` cookie or `X-Dbg` header, or from a superuser. Keeps the last 50 recordings in memory and exposes them to the pages as `globalThis.__dbg` (pages run in the same JS VM). Runs a dry run in a transaction that is rolled back. |
+| `pb_pages/+middleware.ts` | Runs first for every page and endpoint: `__dbg.page(middleware)` records the run (your middleware, `load`, the method's handler, the template). Read-only in the debugger, but replayed, since it runs your middleware. |
 | `pb_pages/debug/+middleware.js` | Superusers only (the `dbg_auth` cookie or an `Authorization` header), no layouts, `no-store`. |
 | `pb_pages/debug/login/index.ts`, `logout.ts` | Sign in and out (`login/index.ejs` is the form). |
 | `pb_pages/debug/index.ejs` | The page. |
-| `pb_pages/debug/api/files.ts`, `recordings.ts`, `presence.ts` | JSON for the page: the hook files with their sources, the recordings, the heartbeat. |
+| `pb_pages/debug/api/files.ts`, `recordings.ts`, `presence.ts` | JSON for the page: the hook and page files with their sources, the recordings, the heartbeat. |
 | `pb_pages/debug/api/suggest.ts` | Suggest examples: the routes, the app's text models, and the question to the model you pick with `$llm` (in the background). |
-| `pb_pages/debug/_private/replay.js` | The replay engine: the fakes, the instrumentation (acorn), the tracer, and the inspector for variables and Evaluate. |
+| `pb_pages/debug/_private/replay.js` | The replay engine: the fakes, the instrumentation (acorn), the tracer, and the inspector for variables and Evaluate. For pages also a fake `ctx`, Pages' `require` (`_private/` folders), and `import` / `export` as CommonJS (on the same lines). |
 | `pb_pages/debug/_private/debugger.js`, `debugger.css` | The UI. `index.ejs` writes these three files into the page, so only a signed-in superuser gets them (`_private/` is never served). |
 | `pb_pages/debug/_private/acorn.js`, `acorn.LICENSE` | [acorn](https://github.com/acornjs/acorn) 8.19.0, the JavaScript parser the replay and the syntax highlighting use: `dist/acorn.js` from the npm package, unchanged, and its MIT license. Included so there's nothing to install and the debugger works offline. |
 | `tests/engine.cjs` | Replays every recording of a running app in Node: `EMAIL=… PASSWORD=… node tests/engine.cjs`. Uses the same `acorn.js`, so there's nothing to install. |
 | `tests/browsers.mjs` | Tests the whole flow in Chrome, Firefox or Safari on macOS, with real key presses: `BROWSER=chrome` (or `firefox`, `safari`) `EMAIL=… PASSWORD=… node tests/browsers.mjs`. Nothing to install: it uses the browser's built-in WebDriver (for Safari, turn it on once with `sudo safaridriver --enable`). It clears the recordings and creates a note, so use it on the demo app. |
 | `pb_hooks/main.pb.js`, `pb_hooks/lib/greet.js`, `pb_migrations/` | The demo app. |
+| `pb_pages/_private/middleware.ts`, `pb_pages/demo/`, `pb_pages/test/` | The demo app's pages: a global middleware, two endpoints, and a page with a template. |
+| `docs/demo.gif`, `docs/screenshot.jpg` | The pictures in this README. |
 
 ## Tested with
 
 | | Version |
 |---|---|
-| PocketOne | **0.0.1-alpha.13** (PocketBase 0.42.3), the release binary for macOS (darwin/amd64): `tests/browsers.mjs` 18/18 in Chrome 158, `tests/engine.cjs` all recordings "same as on the server" (2026-11-27). Before: 0.0.1-alpha.9 |
-| Browsers | **Google Chrome 157** (157.0.8103.79, V8), **Firefox 145.0** (SpiderMonkey), **Safari 26.6.2** (JavaScriptCore), on macOS. The replay runs in the browser's JS engine, not in PocketOne's QuickJS |
+| PocketOne | **0.0.1-alpha.13** (PocketBase 0.42.3, PocketPages 0.2.0), the release binary for macOS (darwin/amd64): `tests/browsers.mjs` 22/22 in Chrome 158 and Firefox 145, 21/21 + 1 known in Safari 26.6.2; `tests/engine.cjs` all recordings, hooks and pages, "same as on the server" (2026-11-27). Before: 0.0.1-alpha.9 |
+| Browsers | **Google Chrome 158** (158.0.8127.37, V8), **Firefox 145.0** (SpiderMonkey), **Safari 26.6.2** (JavaScriptCore), on macOS. The replay runs in the browser's JS engine, not in PocketOne's QuickJS |
 | acorn | 8.19.0, included |
 | Node | 24.22.1, for `tests/engine.cjs` |
 | PocketHost | an instance on PocketHost's PocketOne (`X-Powered-By: Pocker 0.0.1-dev+7da9aa9f`), 2026-11-21, in Chrome: async routes with `$wasm` (Go, Rust and WAT modules, an error, a module's examples) recorded, paused after the `await`, and replayed "same as on the server" |
 
 In each browser: sign-in, recording (also a hook inside a hook), replay "same as on the server", breakpoints, all
-the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, a dry run, saved examples (save, import, delete; not Export's download), and the hook files named `pb_hooks/…` in the browser's
+the step keys (F5, F6, F7, F8, Shift+F6, Shift+F8), Evaluate, a dry run, saved examples (save, import, delete; not Export's download), pages (a breakpoint in `summary.ts`, Step Into its `_private/` module, a page with a template), and the hook files named `pb_hooks/…` in the browser's
 developer tools (`tests/browsers.mjs` in all three, plus a check by hand). On a Mac keyboard you may have to hold **fn** for the F keys.
 
 PocketOne is still in alpha: a newer release can change what hooks see, so the recorder and the replay may need
@@ -209,6 +251,11 @@ updates.
   [the earlier version](#earlier-version-plain-pocketbase).
 - **CommonJS `.js` hook files only** for now (not `.pb.mjs` or `.pb.ts`). The replay runs in the browser's JS engine,
   not QuickJS. That rarely matters for hook code.
+- **Pages: `.ts` files in plain JavaScript.** `import` / `export` work, TypeScript type annotations don't yet (the
+  replay parses JavaScript only). Templates (`.ejs`, `.ets`, `.md`, `.jsx`, `.tsx`) are listed but not replayed: what a
+  template reads on the server is counted as the template's. A page module's top-level code runs once per server
+  (Pages keeps the module), so the replay gives it stand-ins and doesn't step through it. Dry run is for hook
+  routes only. `ctx.include` and `ctx.resolve` aren't recorded: the replay loads the module itself.
 - **Go objects show a snapshot** taken when the handler first got them, e.g. a record before its `set()` calls.
 - **Evaluate** runs in the browser. A Go method the handler called gives its recorded answer, which may be from later
   in the run (e.g. `record.get("text")` before `$app.save()` shows the value after the save hooks). Properties the
@@ -238,7 +285,8 @@ the page: someone who isn't signed in gets only the sign-in form. You can check:
 `curl -i http://127.0.0.1:8094/debug/_private/replay.js` returns 404.
 
 **The recorder** (`pb_hooks/00_dbg.pb.js`) wraps your handlers and the Go objects they use (`e`, `$app`, the other
-`$` globals) and writes down every answer they give, including request headers, cookies, bodies and records. It:
+`$` globals; for pages, through `pb_pages/+middleware.ts`, the parts of `ctx`) and writes down every answer they
+give, including request headers, cookies, bodies and records. It:
 
 - records only while a superuser's debugger tab is open (it sends a heartbeat; recording stops 90 s after the last
   one). With **Only me**, only that tab's requests and superusers' requests are recorded. With **Everyone**, every
@@ -283,7 +331,8 @@ shasum -a 256 pb_pages/debug/_private/acorn.js
 
 The page loads nothing from other sites.
 
-Don't leave `00_dbg.pb.js` and `pb_pages/debug/` on a production app you aren't debugging.
+Don't leave `00_dbg.pb.js`, `pb_pages/debug/` and the `__dbg.page(...)` in `pb_pages/+middleware.ts` on a
+production app you aren't debugging.
 
 ## Earlier version (plain PocketBase)
 

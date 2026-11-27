@@ -10,15 +10,16 @@ const U = process.env.URL || "http://127.0.0.1:8094"
   const cookie = login.headers.get("set-cookie").split(";")[0]
   const get = async (p) => (await fetch(U + p, { headers: { Cookie: cookie } })).json()
   const { files: list, globals } = await get("/debug/api/files")
-  const files = Object.fromEntries(list.filter((f) => f.replay && !f.readonly).map((f) => [f.name, f.source]))
+  const files = Object.fromEntries(list.filter((f) => f.replay).map((f) => [f.name, f.source]))
   for (const sum of (await get("/debug/api/recordings")).reverse()) {
     const rec = await get("/debug/api/recordings?id=" + sum.id)
     const res = await DbgReplay.run(files, rec, { globals, trace: true })
     console.log(`\n#${rec.id} ${rec.title} ${rec.path || ""}: ${res.same ? "same as on the server" : "DIFFERS"}, ${res.steps.length} steps, ${res.used.length}/${rec.log.length} answers` + (res.error ? `, error: ${res.error}` : ""))
     console.log("   lines:", res.steps.map((s) => `${s.file.replace(/.*\//, "")}:${s.line}${"·".repeat(s.depth - 1)}`).join(" "))
     if (res.response.length) console.log("   response:", res.response.join(" "))
+    if (res.template) console.log(`   template: ${res.template.file}, ${res.template.answers} answer(s), not replayed`)
     const at = Math.max(1, res.steps.length - 1)
-    const look = (await DbgReplay.run(files, rec, { globals, stopAt: at, exprs: process.env.EXPR ? [process.env.EXPR] : ["e.request.url.path"] })).inspect
+    const look = (await DbgReplay.run(files, rec, { globals, stopAt: at, exprs: [process.env.EXPR || (rec.kind === "page" ? "ctx.req.url.pathname" : "e.request.url.path")] })).inspect
     const s = res.steps[at - 1]
     console.log(`   at step ${at} (${s.file}:${s.line}), stack: ${look.stack.map((f) => `${f.ctx} @${f.line}`).join(" ← ")}`)
     for (const [k, v] of Object.entries(look.locals)) console.log(`     ${k}: ${v.type} = ${JSON.stringify(v.value).slice(0, 110)}`)

@@ -15,7 +15,7 @@ const state = {
   analysis: null, // { probes, classes }
   analyses: new Map(),
   tabs: [],
-  collapsed: new Set(),
+  collapsed: new Set(["pb_pages/debug"]), // folder paths shown closed (the debugger's own page starts closed)
   expanded: new Set(),
   breakpoints: [], // { file, line }, kept in this browser
   recs: [], // the list (summaries)
@@ -190,11 +190,14 @@ const LOCK_ICON = '<svg class="lock" viewBox="0 0 16 16" fill="currentColor" ari
 const DIR_ICON = '<svg class="ico dir" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3.5A1 1 0 0 1 2.5 2.5h3.6l1.5 1.5h5.9a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/></svg>'
 const FILE_ICON = '<svg class="ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3.5 1.5h6l3 3v10h-9z"/><path d="M9.5 1.5v3h3"/></svg>'
 
+// Two folders at the top, as on disk: pb_hooks (whose files are named without it, e.g. "main.pb.js") and pb_pages
+// (named with it, e.g. "pb_pages/demo/notes.ts"). Only the tree adds "pb_hooks/".
 function buildTree(files) {
   const root = { dirs: new Map(), files: [] }
   files.forEach((f) => {
     let node = root
-    f.name.split("/").slice(0, -1).forEach((part) => {
+    const shown = f.name.startsWith("pb_pages/") ? f.name : "pb_hooks/" + f.name
+    shown.split("/").slice(0, -1).forEach((part) => {
       if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] })
       node = node.dirs.get(part)
     })
@@ -202,6 +205,12 @@ function buildTree(files) {
   })
   return root
 }
+
+// a pb_pages template (page, layout, partial): listed, not replayed yet
+const isTemplate = (name) => name.startsWith("pb_pages/") && /\.(ejs|ets|md|jsx|tsx)$/.test(name)
+
+// a folder whose files are all read-only (pb_pages/debug) gets a lock too
+const allReadonly = (node) => node.files.every((f) => f.readonly) && [...node.dirs.values()].every(allReadonly) && (node.files.length > 0 || node.dirs.size > 0)
 
 function renderTreeNode(ul, node, prefix) {
   ;[...node.dirs.keys()].sort((a, b) => a.localeCompare(b)).forEach((dir) => {
@@ -212,7 +221,12 @@ function renderTreeNode(ul, node, prefix) {
     btn.className = "folder"
     btn.title = path
     btn.setAttribute("aria-expanded", open)
-    btn.innerHTML = `<span class="tw">${open ? "▾" : "▸"}</span>${DIR_ICON}<span class="fname">${esc(dir)}</span>`
+    const locked = allReadonly(node.dirs.get(dir))
+    if (locked) {
+      btn.title = `${path} (read-only: part of the debugger)`
+      btn.classList.add("ro")
+    }
+    btn.innerHTML = `<span class="tw">${open ? "▾" : "▸"}</span>${DIR_ICON}<span class="fname">${esc(dir)}</span>${locked ? LOCK_ICON : ""}`
     btn.addEventListener("click", () => {
       if (open) state.collapsed.add(path)
       else state.collapsed.delete(path)
@@ -229,7 +243,13 @@ function renderTreeNode(ul, node, prefix) {
     const li = document.createElement("li")
     const btn = document.createElement("button")
     btn.className = [state.file && state.file.name === f.name && "active", f.readonly && "ro"].filter(Boolean).join(" ")
-    btn.title = f.readonly ? `${f.name} (read-only: part of the debugger)` : f.replay ? f.name : `${f.name} (can't be replayed yet: only CommonJS .js files)`
+    btn.title = f.readonly
+      ? `${f.name} (read-only: part of the debugger)`
+      : f.replay
+        ? f.name
+        : isTemplate(f.name)
+          ? `${f.name} (a template: not replayed yet)`
+          : `${f.name} (can't be replayed yet: only CommonJS .js files)`
     btn.innerHTML = `${FILE_ICON}<span class="fname">${esc(baseName(f.name))}</span>${f.readonly ? LOCK_ICON : ""}`
     btn.addEventListener("click", () => openFile(f.name))
     li.append(btn)
@@ -333,7 +353,9 @@ function renderCode() {
   $("file-hint").textContent = state.file.readonly
     ? "Read-only: this file is part of the debugger."
     : !state.file.replay
-      ? "Can't be replayed yet (only CommonJS .js files)."
+      ? isTemplate(state.file.name)
+        ? "A template: not replayed yet. The page's .ts code is; what the template reads is shown as the template's."
+        : "Can't be replayed yet (only CommonJS .js files)."
       : probes.size
         ? "Click a line number to toggle a breakpoint. Nothing changes on the server."
         : "No code inside functions (handlers) to put breakpoints on."
@@ -478,7 +500,7 @@ function renderRecs() {
   ul.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => selectRec(Number(b.dataset.id))))
 }
 
-const replayFiles = () => Object.fromEntries(state.files.filter((f) => f.replay && !f.readonly).map((f) => [f.name, f.source]))
+const replayFiles = () => Object.fromEntries(state.files.filter((f) => f.replay).map((f) => [f.name, f.source]))
 
 async function selectRec(id) {
   try {
@@ -619,6 +641,9 @@ function renderResult() {
   if (t.response.length) parts.push(`<div><span class="muted">Response:</span> ${esc(t.response.join(" "))}</div>`)
   if (t.error) parts.push(`<div class="e">${esc(t.error)}${t.sameError ? ' <span class="muted">(the same on the server)</span>' : ""}</div>`)
   if (state.rec.error && !t.error) parts.push(`<div class="e">On the server: ${esc(state.rec.error)}</div>`)
+  if (t.template) {
+    parts.push(`<div class="muted">Template: ${esc(t.template.file.replace(/^pb_pages\//, ""))} ran on the server after the code above${t.template.answers ? ` and read ${t.template.answers} recorded answer(s)` : ""}. Templates aren't replayed yet.</div>`)
+  }
   if (t.misses.length) parts.push(`<div class="e">Asked for something the server never answered (has the file changed since?): ${esc(t.misses[0])}</div>`)
   else if (t.unused.length) parts.push(`<div class="muted">${t.unused.length} recorded answer(s) not asked for (has the file changed since?)</div>`)
   $("result").innerHTML = parts.join("")
@@ -1264,12 +1289,6 @@ $("vars").addEventListener("click", (e) => {
   if (state.expanded.has(path)) state.expanded.delete(path)
   else state.expanded.add(path)
   renderVars()
-})
-$("tree-root").addEventListener("click", () => {
-  const open = $("files").hidden
-  $("files").hidden = !open
-  $("tree-root").setAttribute("aria-expanded", open)
-  $("tree-root").querySelector(".tw").textContent = open ? "▾" : "▸"
 })
 $("console-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") {

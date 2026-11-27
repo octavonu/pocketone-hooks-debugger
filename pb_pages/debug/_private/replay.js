@@ -266,11 +266,71 @@
     return out
   }
 
+  // ES module syntax (`export function get(ctx)`, `import x from "y"`, common in pb_pages .ts files) as CommonJS,
+  // which the replay runs. Only text on the same lines changes, so the line numbers stay the same. Other files are
+  // given back as they are.
+  function toCommonJS(src) {
+    if (!/\b(export|import)\b/.test(src)) return src
+    let ast
+    try {
+      acorn.parse(src, { ecmaVersion: "latest", sourceType: "script", allowReturnOutsideFunction: true, allowHashBang: true })
+      return src // already a script
+    } catch (_) {}
+    try {
+      ast = acorn.parse(src, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true })
+    } catch (_) {
+      return src // let analyze() report the syntax error
+    }
+    const edits = [] // [start, end, text]
+    const exported = [] // [exported name, local name]
+    const blank = (s, e) => src.slice(s, e).replace(/[^\n]/g, " ")
+    for (const node of ast.body) {
+      if (node.type === "ImportDeclaration") {
+        const from = `require(${JSON.stringify(node.source.value)})`
+        const parts = []
+        const named = []
+        for (const s of node.specifiers) {
+          if (s.type === "ImportDefaultSpecifier") parts.push(`${s.local.name}=__dbg_default(${from})`)
+          else if (s.type === "ImportNamespaceSpecifier") parts.push(`${s.local.name}=${from}`)
+          else named.push(s.imported.name === s.local.name ? s.local.name : `${s.imported.name}:${s.local.name}`)
+        }
+        if (named.length) parts.push(`{${named.join(",")}}=${from}`)
+        edits.push([node.start, node.end, parts.length ? `const ${parts.join(",")};` : from + ";"])
+      } else if (node.type === "ExportNamedDeclaration" && node.declaration) {
+        edits.push([node.start, node.declaration.start, blank(node.start, node.declaration.start)])
+        const d = node.declaration
+        if (d.type === "VariableDeclaration") d.declarations.forEach((x) => patternNames(x.id, []).forEach((n) => exported.push([n, n])))
+        else if (d.id) exported.push([d.id.name, d.id.name])
+      } else if (node.type === "ExportNamedDeclaration" && !node.source) {
+        node.specifiers.forEach((s) => exported.push([s.exported.name || s.exported.value, s.local.name]))
+        edits.push([node.start, node.end, blank(node.start, node.end)])
+      } else if (node.type === "ExportDefaultDeclaration") {
+        edits.push([node.start, node.declaration.start, "exports.default="])
+        // `export default function get() {}` is a declaration: as an expression, it needs no name to be exported
+      } else if (node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration") {
+        const from = `require(${JSON.stringify(node.source.value)})`
+        if (node.type === "ExportAllDeclaration") edits.push([node.start, node.end, `Object.assign(exports,${from});`])
+        else edits.push([node.start, node.end, node.specifiers.map((s) => `exports.${s.exported.name}=${from}.${s.local.name};`).join("")])
+      }
+    }
+    let out = src
+    edits.sort((a, b) => b[0] - a[0]).forEach(([s, e, text]) => {
+      // keep the newlines of what's replaced, so the lines after it don't move
+      const nl = src.slice(s, e).split("\n").length - 1
+      out = out.slice(0, s) + text + "\n".repeat(Math.max(0, nl - (text.split("\n").length - 1))) + out.slice(e)
+    })
+    const tail = exported.map(([name, local]) => `exports[${JSON.stringify(name)}]=${local};`).join("")
+    return out + `\n;${tail}exports.__esModule=true;`
+  }
+
   const compiled = new Map() // name + source -> instrumented code
 
   function code(name, src) {
     const key = name + "\0" + src
-    if (!compiled.has(key)) compiled.set(key, instrument(name, src, analyze(src)))
+    if (!compiled.has(key)) {
+      const js = toCommonJS(src)
+      compiled.set(key, instrument(name, js, analyze(js)))
+    }
     return compiled.get(key)
   }
 
@@ -321,7 +381,8 @@
   //   opts.globals:  the names the recorder faked
   //   opts.trace:    collect every step: { file, line, depth, stack: [{ file, line, ctx }] }
   //   opts.stopAt:   at this step (1-based), look: opts.frame (0 = top), opts.exprs (to evaluate there)
-  // Returns { steps, inspect, error, misses, unused, used, response, finished }.
+  // Returns { steps, inspect, error, misses, unused, used, response, template, same }. template: for a page whose
+  // template ran, { file, answers }: the answers it got, which aren't replayed.
   async function run(files, rec, opts = {}) {
     const r = replayer(rec.log)
     const handlers = new Map()
@@ -374,6 +435,9 @@
       require(path) {
         return load(resolve(String(path), "")).exports
       },
+      // an imported module's default export, as Pages and TypeScript give it
+      __dbg: { page: (mw) => mw }, // pb_pages/+middleware: export default __dbg.page(middleware)
+      __dbg_default: (m) => (m && m.__esModule && "default" in m ? m.default : m),
     }
 
     // the variables of a frame, and expressions evaluated in it; reads only, the recording isn't used up
@@ -415,16 +479,33 @@
         return undefined
       },
     })
+    // a module's own module, exports and require (its parameters) must win over the sandbox's: `with` comes first
+    const OWN = ["module", "exports", "require"]
+    const moduleSandbox = new Proxy(sandbox, { has: (t, k) => !OWN.includes(k) && k in t })
 
-    function resolve(path, fromDir) {
-      let p = path.replace(/^\/pb_hooks\//, "")
-      if (p.startsWith("./") || p.startsWith("../")) p = (fromDir ? fromDir + "/" : "") + p
+    const normalize = (p) => {
       const parts = []
       for (const s of p.split("/")) {
         if (s === "..") parts.pop()
         else if (s && s !== ".") parts.push(s)
       }
-      p = parts.join("/")
+      return parts.join("/")
+    }
+    const withExt = (p, exts) => [p, ...exts.map((x) => p + x)].find((x) => x in files)
+
+    function resolve(path, fromDir) {
+      // pb_pages: relative to the file, or a bare name in a _private/ folder from the file's folder up (as Pages)
+      if (fromDir === "pb_pages" || fromDir.startsWith("pb_pages/")) {
+        if (path.startsWith("./") || path.startsWith("../")) return withExt(normalize(fromDir + "/" + path), [".js", ".ts", "/index.js", "/index.ts"]) || normalize(fromDir + "/" + path)
+        for (let dir = fromDir; dir.startsWith("pb_pages"); dir = dir.includes("/") ? dir.slice(0, dir.lastIndexOf("/")) : "") {
+          const hit = withExt(dir + "/_private/" + path, [".js", ".ts", "/index.js", "/index.ts"])
+          if (hit) return hit
+        }
+        return path
+      }
+      let p = path.replace(/^\/pb_hooks\//, "")
+      if (p.startsWith("./") || p.startsWith("../")) p = (fromDir ? fromDir + "/" : "") + p
+      p = normalize(p)
       if (!(p in files) && p + ".js" in files) p += ".js"
       return p
     }
@@ -436,41 +517,131 @@
       modules.set(name, module)
       const dir = name.includes("/") ? name.slice(0, name.lastIndexOf("/")) : ""
       const req = (p) => load(resolve(String(p), dir)).exports
-      compile(name, ["module", "exports", "require"])(sandbox, module, module.exports, req)
+      // A pb_pages module's top-level code ran on the server when the module was first loaded (Pages keeps it per
+      // VM), most likely not in this recording: it gets stand-ins, and its lines aren't steps.
+      const top = name.startsWith("pb_pages/")
+      const was = loading
+      if (top) {
+        loading = true
+        r.loading(true)
+      }
+      try {
+        compile(name, OWN)(moduleSandbox, module, module.exports, req)
+      } finally {
+        if (top) {
+          loading = was
+          r.loading(was)
+        }
+      }
       return module
     }
 
     // Indirect eval with the wrapper on the first line keeps the file's line numbers; sourceURL names it in DevTools.
     function compile(name, params = []) {
-      const src = `(function (__sim, ${params.join(", ")}) { with (__sim) { ${code(name, files[name])}\n} })\n//# sourceURL=pb_hooks/${name}`
+      const url = name.startsWith("pb_pages/") ? name : "pb_hooks/" + name
+      const src = `(function (__sim, ${params.join(", ")}) { with (__sim) { ${code(name, files[name])}\n} })\n//# sourceURL=${url}`
       return (0, eval)(src)
     }
 
-    r.loading(true)
-    try {
-      for (const name of Object.keys(files).sort()) {
-        if (name.includes("/") || !/\.pb\.(c)?js$/.test(name)) continue // modules load on require()
-        compile(name)(sandbox)
+    const isPage = rec.kind === "page"
+    if (!isPage) {
+      r.loading(true)
+      try {
+        for (const name of Object.keys(files).sort()) {
+          if (name.includes("/") || !/\.pb\.(c)?js$/.test(name)) continue // modules load on require()
+          compile(name)(sandbox)
+        }
+      } finally {
+        r.loading(false)
       }
-    } finally {
-      r.loading(false)
     }
     loading = false
 
-    const handler = (handlers.get(rec.key) || [])[rec.n]
-    if (!handler) throw new Error(`No ${rec.key}${rec.n ? " #" + (rec.n + 1) : ""} in the hook files any more.`)
-    const args = rec.kind === "cron" ? [] : [r.fake("e", rec.root ? rec.root.go : "event", rec.root ? rec.root.view : undefined)]
-
     let error = null
-    try {
-      await handler(...args)
-    } catch (err) {
-      error = String(err)
+    if (isPage) {
+      try {
+        await runPage(rec)
+      } catch (err) {
+        error = String(err)
+      }
+    } else {
+      const handler = (handlers.get(rec.key) || [])[rec.n]
+      if (!handler) throw new Error(`No ${rec.key}${rec.n ? " #" + (rec.n + 1) : ""} in the hook files any more.`)
+      const args = rec.kind === "cron" ? [] : [r.fake("e", rec.root ? rec.root.go : "event", rec.root ? rec.root.view : undefined)]
+      try {
+        await handler(...args)
+      } catch (err) {
+        error = String(err)
+      }
     }
-    const unused = r.unused()
+
+    // A pb_pages run, as Pages does it (driver.js): the +middleware files, root first (the root one is wrapped with
+    // __dbg.page(), which here gives the middleware back as it is), then the route's .ts code: load, then the
+    // method's handler. A page's template isn't replayed (yet): what it read stays unused.
+    async function runPage(rec) {
+      const pg = rec.page || {}
+      const file = pg.file || (rec.where && rec.where.file) || ""
+      const ctx = {}
+      for (const k of pg.keys || []) ctx[k] = r.fake("ctx." + k, pg.types?.[k] || "object", pg.views?.[k])
+      Object.assign(ctx, pg.plain || {})
+      ctx.data = pg.data && typeof pg.data === "object" ? JSON.parse(JSON.stringify(pg.data)) : {}
+      const dir = file.slice(0, file.lastIndexOf("/"))
+      ctx.resolve = (name, opts) => {
+        const mode = (opts && opts.mode) || "require"
+        if (mode !== "require") return `‹${mode}: ${name} (not replayed)›`
+        return scope.__dbg_default(load(resolve(String(name), dir)).exports)
+      }
+      ctx.include = (name) => `‹include ${name} (not replayed)›`
+
+      const mod = (name) => scope.__dbg_default(load(name).exports)
+      const sent = () => [...r.used].some((i) => /^ctx\.res\.(json|html|text|redirect|file|sse)\(/.test(rec.log[i].k))
+      const assign = (v) => {
+        if (v && typeof v === "object" && !r.info.has(v) && !sent()) Object.assign(ctx.data, v)
+      }
+
+      const mws = []
+      const parts = dir.split("/")
+      for (let i = 1; i <= parts.length; i++) {
+        const d = parts.slice(0, i).join("/")
+        const m = withExt(d + "/+middleware", [".ts", ".js"])
+        if (m && m !== d + "/+middleware") mws.push(m)
+      }
+      const handlerFile = /\.ts$/.test(file) ? file : file.replace(/\.[^./]+$/, ".ts")
+      let m = String(pg.method || "GET").toLowerCase()
+      if (m === "head") m = "get"
+
+      let mi = 0
+      const next = async () => {
+        if (mi < mws.length) {
+          const name = mws[mi++]
+          const fn = mod(name)
+          if (typeof fn !== "function") throw new Error(name + " must export a function (ctx, next)")
+          return fn(ctx, next)
+        }
+        const code = handlerFile in files ? mod(handlerFile) : null
+        if (code && typeof code.load === "function") {
+          assign(await code.load(ctx))
+          if (sent()) return
+        }
+        const h = code && code[m]
+        if (typeof h === "function") assign(await h(ctx))
+      }
+      await next()
+    }
+
+    // A page's template (and its layouts) ran after the marker the recorder put in the log: its answers aren't
+    // replayed (yet), so they don't count as differences. They're reported as the template's.
+    let unused = r.unused()
+    let template = null
+    const mark = isPage ? rec.log.findIndex((x) => x.template) : -1
+    if (mark !== -1) {
+      const file = (rec.page && rec.page.file) || ""
+      template = { file, answers: unused.filter((x) => x.i > mark).length }
+      unused = unused.filter((x) => x.i < mark)
+    }
     const response = [...r.used]
       .map((i) => rec.log[i])
-      .filter((x) => /^e\.(json|string|html|xml|noContent|redirect|blob|file|stream)\(/.test(x.k))
+      .filter((x) => /^(e\.(json|string|html|xml|noContent|redirect|blob|file|stream)|ctx\.res\.(status|json|html|text|redirect|file|sse))\(/.test(x.k))
       .map((x) => x.k)
     const sameError = !!error && error.replace(/^Error: /, "") === String(rec.error || "").replace(/^Error: /, "")
     return {
@@ -482,9 +653,10 @@
       unused,
       used: [...r.used],
       response,
+      template,
       same: (!error || sameError) && !r.misses.length && !unused.length,
     }
   }
 
-  root.DbgReplay = { run, analyze, describe }
+  root.DbgReplay = { run, analyze: (src) => analyze(toCommonJS(src)), describe }
 })(typeof window !== "undefined" ? window : globalThis)
